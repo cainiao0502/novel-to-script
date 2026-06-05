@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>EmotionCurve hover test</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h } from 'vue'
+      import EmotionCurve from '/src/components/EmotionCurve.vue'
+      import '/src/assets/main.css'
+
+      const point = (id, intensity, emo) => ({ sceneId: id, intensity, dominantEmotion: emo, tags: [] })
+      const arc = (id, name, role, points) => ({ charId: id, charName: name, role, emotions: points })
+
+      const arcs = [
+        arc('fan', '范闲', 'protagonist', [
+          point('s1', 4, '期待'), point('s2', 6, '紧张'), point('s3', 8, '愤怒'),
+          point('s4', 3, '压抑'), point('s5', 9, '激昂'), point('s6', 5, '冷静'),
+          point('s7', 7, '悬疑'), point('s8', 2, '温馨'), point('s9', 6, '恐惧'),
+          point('s10', 10, '激昂')
+        ]),
+        arc('lin', '林黛玉', 'supporting', [
+          point('s1', 5, '悲伤'), point('s2', 3, '压抑'), point('s3', 7, '悲伤'),
+          point('s4', 4, '忧虑'), point('s5', 6, '紧张'), point('s6', 2, '未出场'),
+          point('s7', 8, '悲伤'), point('s8', 5, '温馨'), point('s9', 3, '压抑'),
+          point('s10', 9, '悲伤')
+        ])
+      ]
+
+      const app = createApp({
+        data: () => ({ arcs }),
+        render() {
+          return h('div', { class: 'frame' }, [
+            h(EmotionCurve, { arcs: this.arcs, loading: false })
+          ])
+        }
+      })
+      app.mount('#app')
+    </script>
+    <style>
+      #app { background: #08090c; min-height: 100vh; padding: 20px; }
+      .frame {
+        max-width: 920px; margin: 0 auto; padding: 24px;
+        background: #111318; border: 1px solid #1e222b; border-radius: 14px;
+      }
+    </style>
+  </body>
+</html>

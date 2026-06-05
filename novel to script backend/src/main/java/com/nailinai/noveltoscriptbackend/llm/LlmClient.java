@@ -14,6 +14,13 @@ public interface LlmClient {
     String chat(String systemPrompt, String userPrompt);
 
     /**
+     * 单次对话，指定 max_tokens。默认实现忽略该参数，委托给 {@link #chat(String, String)}。
+     */
+    default String chat(String systemPrompt, String userPrompt, int maxTokens) {
+        return chat(systemPrompt, userPrompt);
+    }
+
+    /**
      * 多轮对话历史。
      */
     String chatWithHistory(List<Map<String, String>> messages);

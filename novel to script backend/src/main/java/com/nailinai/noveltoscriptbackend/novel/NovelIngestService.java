@@ -14,13 +14,16 @@ public class NovelIngestService {
 
     private final ChapterSplitter splitter;
     private final DocxTextExtractor docxExtractor;
+    private final MineruClient mineruClient;
     private final ProjectStore store;
 
     public NovelIngestService(ChapterSplitter splitter,
                               DocxTextExtractor docxExtractor,
+                              MineruClient mineruClient,
                               ProjectStore store) {
         this.splitter = splitter;
         this.docxExtractor = docxExtractor;
+        this.mineruClient = mineruClient;
         this.store = store;
     }
 
@@ -40,12 +43,24 @@ public class NovelIngestService {
         return new IngestResult(project, store.listChapters(project.getId()));
     }
 
+    /** MinerU 支持解析的文件扩展名 */
+    private static final java.util.Set<String> MINERU_EXTENSIONS = java.util.Set.of(
+            ".pdf", ".ppt", ".pptx", ".html", ".htm", ".mhtml",
+            ".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif"
+    );
+
     public IngestResult ingestFile(String title, String sourceNovel, String genre, MultipartFile file) {
         String text;
         String filename = file.getOriginalFilename();
-        if (filename != null && filename.toLowerCase().endsWith(".docx")) {
+        String ext = filename != null ? getExtension(filename) : "";
+
+        if (".docx".equals(ext)) {
             text = docxExtractor.extract(file);
+        } else if (MINERU_EXTENSIONS.contains(ext)) {
+            // PDF / PPT / 图片 / HTML 等 → MinerU 解析为 Markdown
+            text = mineruClient.parseFile(file);
         } else {
+            // txt / md / 其他纯文本
             try {
                 text = new String(file.getBytes(), StandardCharsets.UTF_8);
             } catch (java.io.IOException e) {
@@ -53,6 +68,11 @@ public class NovelIngestService {
             }
         }
         return ingestText(title, sourceNovel, genre, text);
+    }
+
+    private static String getExtension(String filename) {
+        int dot = filename.lastIndexOf('.');
+        return dot >= 0 ? filename.substring(dot).toLowerCase() : "";
     }
 
     public record IngestResult(ProjectEntity project, List<ChapterEntity> chapters) {

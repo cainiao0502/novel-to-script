@@ -30,19 +30,28 @@ public class OpenAiCompatibleClient implements LlmClient {
 
     @Override
     public String chat(String systemPrompt, String userPrompt) {
-        return chatWithHistory(List.of(
-                Map.of("role", "system", "content", systemPrompt),
-                Map.of("role", "user", "content", userPrompt)
-        ));
+        return chat(systemPrompt, userPrompt, 4096);
     }
 
     @Override
-    @SuppressWarnings("unchecked")
+    public String chat(String systemPrompt, String userPrompt, int maxTokens) {
+        return chatWithHistory(List.of(
+                Map.of("role", "system", "content", systemPrompt),
+                Map.of("role", "user", "content", userPrompt)
+        ), maxTokens);
+    }
+
+    @Override
     public String chatWithHistory(List<Map<String, String>> messages) {
+        return chatWithHistory(messages, 4096);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String chatWithHistory(List<Map<String, String>> messages, int maxTokens) {
         if (props.getApiKey() == null || props.getApiKey().isBlank()) {
             throw new LlmException("LLM API key is not configured (APP_LLM_API_KEY)");
         }
-        ChatRequest body = new ChatRequest(props.getModel(), messages);
+        ChatRequest body = new ChatRequest(props.getModel(), messages, 0.4, maxTokens);
         try {
             Map<String, Object> response = webClient.post()
                     .uri("/chat/completions")

@@ -40,5 +40,21 @@ export const api = {
   },
   scriptYamlUrl(id) {
     return `/api/projects/${id}/script.yaml`
+  },
+  restoreChapterYaml(projectId, chapterId, yaml) {
+    return http.put(`/projects/${projectId}/chapters/${chapterId}/script`, { yaml })
+  },
+  restoreProjectYaml(projectId, yaml) {
+    return http.put(`/projects/${projectId}/script`, { yaml })
+  },
+  rewriteDialogue(projectId, body) {
+    return http.post(`/projects/${projectId}/rewrite-dialogue`, body).then((r) => r.data)
+  },
+  analyzeEmotions(projectId, refresh = false) {
+    const params = refresh ? '?refresh=true' : ''
+    return http.post(`/projects/${projectId}/analyze-emotions${params}`).then((r) => r.data)
+  },
+  getEmotions(projectId) {
+    return http.get(`/projects/${projectId}/emotions`).then((r) => r.data)
   }
 }

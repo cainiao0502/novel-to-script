@@ -234,14 +234,14 @@ function statusLabel(s) {
               <input
                 ref="fileInput"
                 type="file"
-                accept=".txt,.docx"
+                accept=".txt,.docx,.pdf"
                 @change="onFilePick"
                 class="file-hidden"
               />
               <span v-if="!fileName" class="empty">
                 <span class="dropzone-icon">📄</span>
                 <strong>点击选择文件</strong>
-                <span class="subtle">支持 .txt / .docx，最大 20MB</span>
+                <span class="subtle">支持 .txt / .docx / .pdf，最大 200MB</span>
               </span>
               <span v-else class="filled">
                 <span class="dropzone-icon">✅</span>

@@ -227,6 +227,22 @@ public class ProjectStore {
         }
     }
 
+    public void updateChapterYaml(long chapterId, String yaml) {
+        ChapterEntity c = new ChapterEntity();
+        c.setId(chapterId);
+        c.setGeneratedYaml(yaml);
+        c.setUpdatedAt(Instant.now());
+        chapterMapper.updateById(c);
+    }
+
+    public void updateProjectScriptYaml(long id, String yaml) {
+        ProjectEntity p = new ProjectEntity();
+        p.setId(id);
+        p.setScriptYaml(yaml);
+        p.setUpdatedAt(Instant.now());
+        projectMapper.updateById(p);
+    }
+
     // ============ Redis progress ============
 
     public void cacheProgress(long projectId, int progress, int currentChapter, int totalChapters) {

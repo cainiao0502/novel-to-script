@@ -80,6 +80,18 @@ public class ScriptGenerationService {
         }
     }
 
+    @Async("llmExecutor")
+    public void regenerateSingleChapterAsync(long projectId, long chapterId) {
+        try {
+            regenerateSingleChapter(projectId, chapterId);
+        } catch (Exception e) {
+            log.error("Single chapter regeneration crashed for project {} chapter {}", projectId, chapterId, e);
+            store.updateChapterStatus(chapterId, ChapterStatus.FAILED, null, null, e.getMessage());
+            store.updateProjectStatus(projectId, ProjectStatus.PARTIAL_SUCCESS,
+                    "Chapter regeneration failed: " + e.getMessage());
+        }
+    }
+
     public void generate(long projectId) {
         ProjectEntity project = store.findProject(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
@@ -196,6 +208,125 @@ public class ScriptGenerationService {
 
         log.info("Project {} generated: {} chapters ok, {} failed",
                 projectId, perChapter.size(), failed);
+    }
+
+    /**
+     * 仅重新生成指定章节，然后重新合并全部脚本。
+     */
+    public void regenerateSingleChapter(long projectId, long chapterId) {
+        ProjectEntity project = store.findProject(projectId)
+                .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
+        List<ChapterEntity> allChapters = store.listChapters(projectId);
+
+        // 找到目标章节
+        ChapterEntity target = allChapters.stream()
+                .filter(c -> c.getId().equals(chapterId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Chapter not found: " + chapterId));
+
+        store.updateProjectStatus(projectId, ProjectStatus.GENERATING, null);
+        store.updateChapterStatus(chapterId, ChapterStatus.GENERATING, null, null, null);
+        store.cacheProgress(projectId, 0, target.getIdx(), allChapters.size());
+
+        // 从已完成章节收集已知人物
+        List<Character> knownChars = new ArrayList<>();
+        knownChars.add(new Character(Character.NARRATOR_ID, "旁白", null, null, null,
+                com.nailinai.noveltoscriptbackend.domain.script.Role.NPC, null, null));
+        for (ChapterEntity ch : allChapters) {
+            if (ch.getId().equals(chapterId)) continue;
+            if (ch.getStatus() != null && ch.getStatus().equals(ChapterStatus.DONE.name())
+                    && ch.getGeneratedYaml() != null) {
+                try {
+                    Script s = yamlMapper.fromYaml(ch.getGeneratedYaml());
+                    if (s.characters() != null) {
+                        Set<String> existing = knownChars.stream()
+                                .map(Character::id).collect(Collectors.toSet());
+                        for (Character c : s.characters()) {
+                            if (c.id() != null && !existing.contains(c.id())) {
+                                knownChars.add(c);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to parse existing chapter {} YAML: {}", ch.getIdx(), e.getMessage());
+                }
+            }
+        }
+
+        // 生成指定章节
+        try {
+            Script newScript = generateOneChapter(
+                    target.getTitle(), target.getIdx(), allChapters.size(),
+                    target.getContent(), knownChars);
+            store.updateChapterStatus(chapterId, ChapterStatus.DONE,
+                    yamlMapper.toYaml(newScript),
+                    newScript.scenes() == null ? 0 : newScript.scenes().size(), null);
+        } catch (Exception e) {
+            log.warn("Single chapter {} regeneration failed: {}", target.getIdx(), e.getMessage());
+            store.updateChapterStatus(chapterId, ChapterStatus.FAILED, null, null, e.getMessage());
+            store.updateProjectStatus(projectId, ProjectStatus.PARTIAL_SUCCESS,
+                    "Chapter " + target.getIdx() + " regeneration failed: " + e.getMessage());
+            return;
+        }
+
+        // 重新合并全部章节
+        remergeProject(projectId, project, allChapters);
+    }
+
+    /**
+     * 重新合并所有已完成章节的 YAML，更新项目脚本和人物表。
+     */
+    private void remergeProject(long projectId, ProjectEntity project, List<ChapterEntity> allChapters) {
+        // 重新加载最新章节状态
+        List<ChapterEntity> freshChapters = store.listChapters(projectId);
+
+        List<Script> perChapter = new ArrayList<>();
+        for (ChapterEntity ch : freshChapters) {
+            if (ChapterStatus.DONE.name().equals(ch.getStatus()) && ch.getGeneratedYaml() != null) {
+                try {
+                    perChapter.add(yamlMapper.fromYaml(ch.getGeneratedYaml()));
+                } catch (Exception e) {
+                    log.warn("Failed to parse chapter {} YAML during merge: {}", ch.getIdx(), e.getMessage());
+                }
+            }
+        }
+
+        long failed = freshChapters.stream()
+                .filter(c -> ChapterStatus.FAILED.name().equals(c.getStatus()))
+                .count();
+
+        if (perChapter.isEmpty()) {
+            store.updateProjectStatus(projectId, ProjectStatus.FAILED, "All chapters failed");
+            return;
+        }
+
+        Script merged = merger.merge(
+                project.getTitle(), project.getSourceNovel(), project.getGenre(), perChapter);
+        String mergedYaml = yamlMapper.toYaml(merged);
+
+        // 更新人物表
+        List<ProjectCharacterEntity> characterRows = merged.characters() == null ? List.of()
+                : merged.characters().stream().map(c -> {
+                    ProjectCharacterEntity row = new ProjectCharacterEntity();
+                    row.setCharId(c.id());
+                    row.setName(c.name());
+                    row.setRole(c.role() == null ? null : c.role().yamlValue());
+                    try {
+                        row.setFullDataJson(json.writeValueAsString(c));
+                    } catch (Exception e) {
+                        row.setFullDataJson("{}");
+                    }
+                    return row;
+                }).toList();
+        store.replaceProjectCharacters(projectId, characterRows);
+        store.saveProjectScript(projectId, mergedYaml, store.charactersToJson(characterRows));
+
+        if (failed > 0) {
+            store.updateProjectStatus(projectId, ProjectStatus.PARTIAL_SUCCESS,
+                    failed + " chapter(s) failed; partial result saved");
+        } else {
+            store.updateProjectStatus(projectId, ProjectStatus.COMPLETED, null);
+        }
     }
 
     private Script generateOneChapter(String title, int idx, int total, String content,

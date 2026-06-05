@@ -7,6 +7,7 @@ import com.nailinai.noveltoscriptbackend.domain.entity.ChapterEntity;
 import com.nailinai.noveltoscriptbackend.domain.entity.ProjectEntity;
 import com.nailinai.noveltoscriptbackend.novel.NovelIngestService;
 import com.nailinai.noveltoscriptbackend.persistence.ProjectStore;
+import com.nailinai.noveltoscriptbackend.script.EmotionAnalysisService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,11 +15,14 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
@@ -27,12 +31,18 @@ import java.util.Map;
 @RequestMapping("/api/projects")
 public class ProjectController {
 
+    private static final Logger log = LoggerFactory.getLogger(ProjectController.class);
+
     private final NovelIngestService ingest;
     private final ProjectStore store;
+    private final EmotionAnalysisService emotionAnalysis;
 
-    public ProjectController(NovelIngestService ingest, ProjectStore store) {
+    public ProjectController(NovelIngestService ingest,
+                             ProjectStore store,
+                             EmotionAnalysisService emotionAnalysis) {
         this.ingest = ingest;
         this.store = store;
+        this.emotionAnalysis = emotionAnalysis;
     }
 
     /** 列出所有项目（轻量级摘要）。 */
@@ -79,6 +89,88 @@ public class ProjectController {
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
         List<ChapterEntity> chapters = store.listChapters(id);
         return ResponseEntity.ok(toResponse(p, chapters));
+    }
+
+    /** 恢复单章 YAML（用户拒绝了重生成的新版本）。 */
+    @PutMapping("/{id}/chapters/{chapterId}/script")
+    public ResponseEntity<Void> restoreChapterYaml(
+            @PathVariable long id,
+            @PathVariable long chapterId,
+            @RequestBody Map<String, String> body) {
+        ChapterEntity ch = store.findChapter(chapterId)
+                .orElseThrow(() -> new ResourceNotFoundException("Chapter not found: " + chapterId));
+        if (!ch.getProjectId().equals(id)) {
+            throw new IllegalArgumentException("Chapter does not belong to project " + id);
+        }
+        String yaml = body.get("yaml");
+        if (yaml == null || yaml.isBlank()) {
+            throw new IllegalArgumentException("yaml is required");
+        }
+        store.updateChapterYaml(chapterId, yaml);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** 恢复全量剧本 YAML（用户拒绝了重新生成的全部结果）。 */
+    @PutMapping("/{id}/script")
+    public ResponseEntity<Void> restoreProjectYaml(
+            @PathVariable long id,
+            @RequestBody Map<String, String> body) {
+        store.findProject(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        String yaml = body.get("yaml");
+        if (yaml == null || yaml.isBlank()) {
+            throw new IllegalArgumentException("yaml is required");
+        }
+        store.updateProjectScriptYaml(id, yaml);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 触发全剧情绪曲线分析（按角色维度）。
+     * 返回每个角色的情绪弧线数组，按 protagonist → antagonist → supporting → npc 排序。
+     * 结果缓存 1 小时，重复调用直接走缓存。
+     */
+    @PostMapping("/{id}/analyze-emotions")
+    public ResponseEntity<?> analyzeEmotions(@PathVariable long id,
+                                              @RequestParam(defaultValue = "false") boolean refresh) {
+        ProjectEntity p = store.findProject(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+
+        String yaml = p.getScriptYaml();
+        if (yaml == null || yaml.isBlank()) {
+            return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED)
+                    .body(Map.of("error", "Script not ready. Generate the script first."));
+        }
+
+        // 检查缓存（refresh=true 时跳过）
+        if (!refresh) {
+            List<EmotionAnalysisService.EmotionArc> cached = emotionAnalysis.getCached(id);
+            if (cached != null) {
+                return ResponseEntity.ok(Map.of("arcs", cached, "source", "cache"));
+            }
+        }
+
+        try {
+            List<EmotionAnalysisService.EmotionArc> result = emotionAnalysis.analyzeAndCache(id, yaml);
+            return ResponseEntity.ok(Map.of("arcs", result, "source", "fresh"));
+        } catch (Exception e) {
+            log.error("Emotion analysis failed for project {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Analysis failed: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/{id}/emotions")
+    public ResponseEntity<?> getEmotions(@PathVariable long id) {
+        store.findProject(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+
+        List<EmotionAnalysisService.EmotionArc> cached = emotionAnalysis.getCached(id);
+        if (cached == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "No cached analysis. POST /analyze-emotions first."));
+        }
+        return ResponseEntity.ok(Map.of("arcs", cached));
     }
 
     @GetMapping("/{id}/script.yaml")

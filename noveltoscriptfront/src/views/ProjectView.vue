@@ -2,12 +2,13 @@
 import { onMounted, onBeforeUnmount, ref, computed, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import gsap from 'gsap'
-import { parse as parseYaml } from 'yaml'
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { api } from '@/api'
 import { useConfirm } from '@/composables/useConfirm'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ScriptEditor from '@/components/ScriptEditor.vue'
 import ScriptRender from '@/components/ScriptRender.vue'
+import EmotionCurve from '@/components/EmotionCurve.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
 
 const route = useRoute()
@@ -21,7 +22,16 @@ const editorRef = ref(null)
 const scriptRenderRef = ref(null)
 const selectedChapter = ref(null)
 const viewMode = ref('script')
+const isFullscreen = ref(false)
+
+// ── Emotion curve ──
+const emotionData = ref(null) // { arcs: [...], source: 'cache'|'fresh' }
+const emotionLoading = ref(false)
 const { confirm: showConfirm } = useConfirm()
+
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
+}
 
 function switchView(mode) {
   if (mode === viewMode.value) return
@@ -29,6 +39,20 @@ function switchView(mode) {
   nextTick(() => {
     if (mode === 'script') scriptRenderRef.value?.animateIn()
   })
+}
+
+async function analyzeEmotions() {
+  if (emotionLoading.value) return
+  emotionLoading.value = true
+  emotionData.value = null
+  try {
+    const result = await api.analyzeEmotions(projectId)
+    emotionData.value = result
+  } catch (e) {
+    error.value = '情感分析失败：' + e.message
+  } finally {
+    emotionLoading.value = false
+  }
 }
 
 let pollHandle = null
@@ -50,6 +74,9 @@ const statusLabel = (s) => ({
 const liveProgress = ref(0)
 const liveCurrent = ref(0)
 const liveTotal = ref(0)
+const regeneratingIds = ref(new Set())
+const compareState = ref(null)
+// { originalYaml, newYaml, chapterId, chapterLabel, isFull }
 
 // Chapters with ordered display: DONE chapters that have earlier in-progress siblings show as QUEUED
 const displayChapters = computed(() => {
@@ -58,7 +85,8 @@ const displayChapters = computed(() => {
     let ds = ch.status
     if (ch.status === 'DONE') {
       for (let j = 0; j < i; j++) {
-        if (['GENERATING', 'PENDING'].includes(sorted[j].status)) {
+        const prev = sorted[j]
+        if (['GENERATING', 'PENDING'].includes(prev.status) && !regeneratingIds.value.has(prev.id)) {
           ds = 'QUEUED'
           break
         }
@@ -116,6 +144,10 @@ function onChaptersChanged(newChapters) {
       nextTick(() => {
         const el = chapterRefs[ch.id]
         if (ch.status === 'DONE') {
+          // Populate comparison newYaml when regenerated chapter completes
+          if (compareState.value?.chapterId === ch.id && ch.generatedYaml) {
+            compareState.value = { ...compareState.value, newYaml: ch.generatedYaml }
+          }
           addChapterToast(`第 ${ch.idx} 章生成完成 ✓`)
           if (el) {
             gsap.from(el, { scale: 0.96, opacity: 0.6, duration: 0.45, ease: 'back.out(1.7)' })
@@ -126,6 +158,10 @@ function onChaptersChanged(newChapters) {
           addChapterToast(`第 ${ch.idx} 章生成失败 ✗`)
         } else if (ch.status === 'GENERATING' && el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }
+        // Clean up regenerating flag when chapter finishes
+        if ((ch.status === 'DONE' || ch.status === 'FAILED') && regeneratingIds.value.has(ch.id)) {
+          regeneratingIds.value.delete(ch.id)
         }
       })
     }
@@ -167,13 +203,21 @@ onMounted(async () => {
   if (project.value && ['GENERATING', 'PENDING'].includes(project.value.status)) {
     startPolling()
   }
+  document.addEventListener('keydown', onKeyDown)
 })
 
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+  stopPolling()
+  document.removeEventListener('keydown', onKeyDown)
+})
 
 watch(() => project.value?.status, (s, prev) => {
   if (s && ['GENERATING', 'PENDING'].includes(s)) startPolling()
   else stopPolling()
+  // Populate comparison newYaml when full regeneration completes
+  if (compareState.value?.isFull && s === 'COMPLETED' && project.value?.scriptYaml) {
+    compareState.value = { ...compareState.value, newYaml: project.value.scriptYaml }
+  }
   // Completion celebration
   if (s && ['COMPLETED', 'PARTIAL_SUCCESS'].includes(s) && prev && ['GENERATING', 'PENDING'].includes(prev)) {
     nextTick(() => {
@@ -191,10 +235,21 @@ function animateIn() {
 }
 
 async function regenerateChapter(chapterId) {
+  regeneratingIds.value.add(chapterId)
+  const ch = chapters.value.find(c => c.id === chapterId)
+  compareState.value = {
+    originalYaml: ch?.generatedYaml || '',
+    chapterId,
+    chapterLabel: ch ? `第 ${ch.idx} 章` : '',
+    isFull: false,
+    newYaml: ''
+  }
   try {
     await api.regenerateChapter(projectId, chapterId)
     startPolling()
   } catch (e) {
+    regeneratingIds.value.delete(chapterId)
+    compareState.value = null
     error.value = e.message
   }
 }
@@ -207,10 +262,18 @@ async function regenerateAll() {
     cancelText: '再想想'
   })
   if (!ok) return
+  compareState.value = {
+    originalYaml: project.value?.scriptYaml || '',
+    chapterId: null,
+    chapterLabel: '完整剧本',
+    isFull: true,
+    newYaml: ''
+  }
   try {
     await api.generate(projectId)
     startPolling()
   } catch (e) {
+    compareState.value = null
     error.value = e.message
   }
 }
@@ -221,6 +284,76 @@ function selectChapter(ch) {
 
 function viewFullScript() {
   selectedChapter.value = null
+}
+
+function onKeyDown(e) {
+  if (e.key === 'Escape' && isFullscreen.value) {
+    isFullscreen.value = false
+  }
+}
+
+function onCompareAcceptNew() {
+  compareState.value = null
+}
+
+async function onCompareAcceptOriginal() {
+  const st = compareState.value
+  if (!st) return
+  try {
+    if (st.isFull) {
+      await api.restoreProjectYaml(projectId, st.originalYaml)
+    } else {
+      await api.restoreChapterYaml(projectId, st.chapterId, st.originalYaml)
+    }
+    compareState.value = null
+    await load()
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+function onCompareCancel() {
+  compareState.value = null
+}
+
+// ── AI 改稿 ──
+
+async function onRewriteDialogue({ sceneId, dialogueIndex, line, character, style, context }) {
+  try {
+    const result = await api.rewriteDialogue(projectId, {
+      style,
+      currentLine: line,
+      context
+    })
+    scriptRenderRef.value?.showRewriteResult(
+      sceneId, dialogueIndex, line, result.rewrittenLine
+    )
+  } catch (e) {
+    scriptRenderRef.value?.onRewriteDone()
+    error.value = 'AI 改稿失败：' + e.message
+  }
+}
+
+async function onAcceptRewrite({ sceneId, dialogueIndex, rewrittenLine }) {
+  // Determine which YAML to modify: chapter-level or project-level
+  const yamlSource = selectedChapter.value?.generatedYaml || project.value?.scriptYaml
+  if (!yamlSource) return
+  try {
+    const doc = parseYaml(yamlSource)
+    const scene = doc?.scenes?.find(s => (s.scene_id || '') === sceneId)
+    if (!scene?.dialogues?.[dialogueIndex]) return
+    scene.dialogues[dialogueIndex].line = rewrittenLine
+    // Serialize back to YAML
+    const newYaml = stringifyYaml(doc)
+    if (selectedChapter.value) {
+      await api.restoreChapterYaml(projectId, selectedChapter.value.id, newYaml)
+    } else {
+      await api.restoreProjectYaml(projectId, newYaml)
+    }
+    await load()
+  } catch (e) {
+    error.value = '保存改稿失败：' + e.message
+  }
 }
 
 async function copyYaml() {
@@ -356,9 +489,9 @@ function autoSelectChapter(chs) {
         <div v-if="error" class="error-bar">⚠ {{ error }}</div>
 
         <!-- Three column workbench -->
-        <div class="workbench">
+        <div class="workbench" :class="{ 'is-comparing': compareState }">
           <!-- Chapter list -->
-          <aside class="panel panel-left">
+          <aside v-if="!isFullscreen" class="panel panel-left">
             <header class="panel-head">
               <h3 class="card-title">章节</h3>
               <div class="panel-actions">
@@ -402,50 +535,101 @@ function autoSelectChapter(chs) {
           </aside>
 
           <!-- Editor -->
-          <main class="panel panel-main">
-            <header class="panel-head">
-              <div class="editor-title">
-                <h3 class="card-title">
-                  {{ selectedChapter ? `第 ${selectedChapter.idx} 章` : '剧本' }}
-                  <span v-if="selectedChapter?.status === 'GENERATING'" class="writing-badge">
-                    <span class="writing-dot" />AI 生成中
-                  </span>
-                </h3>
-                <button
-                  v-if="selectedChapter"
-                  class="btn btn-tertiary btn-mini"
-                  @click="viewFullScript"
-                >查看完整剧本</button>
+          <main class="panel panel-main" :class="{ 'is-fullscreen': isFullscreen }">
+            <!-- Split comparison mode -->
+            <template v-if="compareState">
+              <div class="compare-split">
+                <div class="compare-col">
+                  <div class="compare-col-head">
+                    <span class="compare-badge">{{ compareState.chapterLabel }} · 当前版本</span>
+                  </div>
+                  <div class="compare-col-body">
+                    <ScriptRender :yaml="compareState.originalYaml" :is-generating="false" />
+                  </div>
+                  <div class="compare-col-foot" v-if="compareState.newYaml">
+                    <button class="keep-btn keep-ghost" @click="onCompareAcceptOriginal">保留此版本</button>
+                  </div>
+                </div>
+                <div class="compare-divider" />
+                <div class="compare-col is-new">
+                  <div class="compare-col-head">
+                    <span class="compare-badge new">{{ compareState.chapterLabel }} · 新版本</span>
+                    <span v-if="!compareState.newYaml" class="writing-badge"><span class="writing-dot" />生成中</span>
+                    <button v-else class="btn btn-tertiary btn-mini" @click="onCompareCancel">✕ 取消</button>
+                  </div>
+                  <div class="compare-col-body">
+                    <ScriptRender :yaml="compareState.newYaml" :is-generating="!compareState.newYaml" />
+                  </div>
+                  <div class="compare-col-foot" v-if="compareState.newYaml">
+                    <button class="keep-btn keep-primary" @click="onCompareAcceptNew">保留此版本</button>
+                  </div>
+                </div>
               </div>
-              <div class="panel-tabs">
+            </template>
+
+            <!-- Normal single-panel view -->
+            <template v-else>
+              <header class="panel-head">
+                <div class="editor-title">
+                  <h3 class="card-title">
+                    {{ selectedChapter ? `第 ${selectedChapter.idx} 章` : '剧本' }}
+                    <span v-if="selectedChapter?.status === 'GENERATING'" class="writing-badge">
+                      <span class="writing-dot" />AI 生成中
+                    </span>
+                  </h3>
+                  <button
+                    v-if="selectedChapter"
+                    class="btn btn-tertiary btn-mini"
+                    @click="viewFullScript"
+                  >查看完整剧本</button>
+                </div>
+                <div class="panel-tabs">
+                  <button
+                    class="panel-tab"
+                    :class="{ active: viewMode === 'script' }"
+                    @click="switchView('script')"
+                  >剧本</button>
+                  <button
+                    class="panel-tab"
+                    :class="{ active: viewMode === 'yaml' }"
+                    @click="switchView('yaml')"
+                  >YAML</button>
+                  <button
+                    class="panel-tab"
+                    :class="{ active: viewMode === 'emotion' }"
+                    @click="switchView('emotion'); if (!emotionData && !emotionLoading) analyzeEmotions()"
+                  >情感曲线</button>
+                </div>
                 <button
-                  class="panel-tab"
-                  :class="{ active: viewMode === 'script' }"
-                  @click="switchView('script')"
-                >剧本</button>
-                <button
-                  class="panel-tab"
-                  :class="{ active: viewMode === 'yaml' }"
-                  @click="switchView('yaml')"
-                >YAML</button>
-              </div>
-            </header>
-            <ScriptRender
-              v-if="viewMode === 'script'"
-              ref="scriptRenderRef"
-              :yaml="selectedChapter?.generatedYaml || project.scriptYaml"
-              :is-generating="(selectedChapter && selectedChapter.status === 'GENERATING') || (!selectedChapter && ['GENERATING','PENDING'].includes(project.status))"
-            />
-            <ScriptEditor
-              v-else
-              ref="editorRef"
-              :yaml="selectedChapter?.generatedYaml || project.scriptYaml"
-              :read-only="true"
-            />
+                  class="btn btn-tertiary btn-mini btn-fs"
+                  @click="toggleFullscreen"
+                  :title="isFullscreen ? '退出全屏 (Esc)' : '全屏阅读'"
+                >{{ isFullscreen ? '⊠' : '⊡' }}</button>
+              </header>
+              <ScriptRender
+                v-if="viewMode === 'script'"
+                ref="scriptRenderRef"
+                :yaml="selectedChapter?.generatedYaml || project.scriptYaml"
+                :is-generating="!project.scriptYaml && ['GENERATING','PENDING'].includes(project.status)"
+                @rewrite-dialogue="onRewriteDialogue"
+                @accept-rewrite="onAcceptRewrite"
+              />
+              <ScriptEditor
+                v-else-if="viewMode === 'yaml'"
+                ref="editorRef"
+                :yaml="selectedChapter?.generatedYaml || project.scriptYaml"
+                :read-only="true"
+              />
+              <EmotionCurve
+                v-else-if="viewMode === 'emotion'"
+                :arcs="emotionData?.arcs || []"
+                :loading="emotionLoading"
+              />
+            </template>
           </main>
 
           <!-- Right panel: characters + scenes summary -->
-          <aside class="panel panel-right">
+          <aside v-if="!isFullscreen && !compareState" class="panel panel-right">
             <header class="panel-head">
               <h3 class="card-title">人物</h3>
               <span class="badge-count">{{ displayCharacters.length }}</span>
@@ -538,6 +722,9 @@ function autoSelectChapter(chs) {
   gap: var(--space-md);
   align-items: start;
 }
+.workbench.is-comparing {
+  grid-template-columns: 280px 1fr;
+}
 .panel {
   position: relative;
   background: var(--color-surface-1);
@@ -628,6 +815,95 @@ function autoSelectChapter(chs) {
 .panel-main { display: flex; flex-direction: column; }
 .panel-main .panel-head { flex: 0 0 auto; }
 .panel-main :deep(.cm-editor) { flex: 1; }
+
+/* Fullscreen mode */
+.panel-main.is-fullscreen {
+  position: fixed; inset: 0; z-index: 500;
+  border-radius: 0; border: 0;
+  min-height: 100vh;
+  background: var(--color-canvas);
+}
+.panel-main.is-fullscreen .script-render {
+  max-height: calc(100vh - 56px);
+}
+.btn-fs {
+  font-size: 18px; width: 28px; height: 28px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0.5; flex-shrink: 0;
+}
+.btn-fs:hover { opacity: 1; }
+
+/* ── Split comparison layout ── */
+.compare-split {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  flex: 1; min-height: 0;
+}
+.compare-divider {
+  width: 1px;
+  background: var(--color-hairline);
+}
+.compare-col {
+  display: flex; flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface-1);
+}
+.compare-col.is-new {
+  background: var(--color-surface-2);
+}
+.compare-col-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px var(--space-md);
+  border-bottom: 1px solid var(--color-hairline);
+  flex-shrink: 0;
+}
+.compare-badge {
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  color: var(--color-ink-muted);
+}
+.compare-badge.new {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.compare-col-body {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+}
+.compare-col-body :deep(.script-render) {
+  max-height: none;
+  padding: var(--space-md);
+}
+.compare-col-foot {
+  display: flex; justify-content: center;
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--color-hairline);
+  flex-shrink: 0;
+}
+
+/* Keep buttons */
+.keep-btn {
+  height: 32px; padding: 0 18px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out-quad);
+}
+.keep-primary {
+  background: var(--gradient-primary);
+  color: var(--color-on-primary);
+  border: 0;
+  box-shadow: 0 1px 3px rgba(108,123,240,0.25);
+}
+.keep-primary:hover { box-shadow: 0 2px 8px rgba(108,123,240,0.35); transform: translateY(-1px); }
+.keep-ghost {
+  background: transparent;
+  color: var(--color-ink-muted);
+  border: 1px solid var(--color-hairline-strong);
+}
+.keep-ghost:hover { background: var(--color-surface-2); color: var(--color-ink); }
+
 .editor-title {
   display: flex; align-items: center; gap: var(--space-sm);
 }

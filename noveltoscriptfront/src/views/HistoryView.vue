@@ -30,7 +30,6 @@ function animateCards() {
   if (!cards.length) return
   gsap.from(cards, {
     y: 16,
-    opacity: 0,
     duration: 0.45,
     stagger: 0.06,
     ease: 'expo.out'

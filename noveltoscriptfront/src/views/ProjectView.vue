@@ -1,0 +1,804 @@
+<script setup>
+import { onMounted, onBeforeUnmount, ref, computed, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
+import gsap from 'gsap'
+import { parse as parseYaml } from 'yaml'
+import { api } from '@/api'
+import { useConfirm } from '@/composables/useConfirm'
+import StatusBadge from '@/components/StatusBadge.vue'
+import ScriptEditor from '@/components/ScriptEditor.vue'
+import ScriptRender from '@/components/ScriptRender.vue'
+import ProgressBar from '@/components/ProgressBar.vue'
+
+const route = useRoute()
+const projectId = Number(route.params.id)
+
+const project = ref(null)
+const chapters = ref([])
+const loading = ref(true)
+const error = ref('')
+const editorRef = ref(null)
+const scriptRenderRef = ref(null)
+const selectedChapter = ref(null)
+const viewMode = ref('script')
+const { confirm: showConfirm } = useConfirm()
+
+function switchView(mode) {
+  if (mode === viewMode.value) return
+  viewMode.value = mode
+  nextTick(() => {
+    if (mode === 'script') scriptRenderRef.value?.animateIn()
+  })
+}
+
+let pollHandle = null
+
+const statusTone = (s) => ({
+  DRAFT: '', PENDING: 'running', GENERATING: 'running',
+  PARTIAL_SUCCESS: 'warning', COMPLETED: 'success',
+  FAILED: 'error', DONE: 'success',
+  QUEUED: 'queued'
+})[s] || ''
+
+const statusLabel = (s) => ({
+  DRAFT: '草稿', PENDING: '待处理', GENERATING: '生成中',
+  PARTIAL_SUCCESS: '部分成功', COMPLETED: '已完成',
+  FAILED: '失败', DONE: '已生成',
+  QUEUED: '排队中'
+})[s] || s
+
+const liveProgress = ref(0)
+const liveCurrent = ref(0)
+const liveTotal = ref(0)
+
+// Chapters with ordered display: DONE chapters that have earlier in-progress siblings show as QUEUED
+const displayChapters = computed(() => {
+  const sorted = [...chapters.value].sort((a, b) => a.idx - b.idx)
+  return sorted.map((ch, i) => {
+    let ds = ch.status
+    if (ch.status === 'DONE') {
+      for (let j = 0; j < i; j++) {
+        if (['GENERATING', 'PENDING'].includes(sorted[j].status)) {
+          ds = 'QUEUED'
+          break
+        }
+      }
+    }
+    return { ...ch, displayStatus: ds }
+  })
+})
+
+const displayChaptersForBar = computed(() =>
+  displayChapters.value.map(ch => ({ idx: ch.idx, status: ch.displayStatus }))
+)
+
+const prevChapterStatuses = {}
+const chapterToasts = ref([])
+const chapterRefs = {}
+function setChapterRef(el, id) { if (el) chapterRefs[id] = el; else delete chapterRefs[id] }
+
+async function load() {
+  try {
+    const p = await api.getProject(projectId)
+    project.value = p
+    chapters.value = p.chapters || []
+    if (p.liveProgress) {
+      liveProgress.value = p.liveProgress.progress || 0
+      liveCurrent.value = p.liveProgress.currentChapter || 0
+      liveTotal.value = p.liveProgress.totalChapters || p.totalChapters || 0
+    } else {
+      liveProgress.value = p.progress || 0
+      liveCurrent.value = p.currentChapter || 0
+      liveTotal.value = p.totalChapters || 0
+    }
+    loading.value = false
+  } catch (e) {
+    error.value = e.message
+    loading.value = false
+  }
+}
+
+function addChapterToast(msg) {
+  const id = Date.now() + Math.random()
+  chapterToasts.value.push({ id, msg })
+  setTimeout(() => {
+    const idx = chapterToasts.value.findIndex(t => t.id === id)
+    if (idx >= 0) chapterToasts.value.splice(idx, 1)
+  }, 3500)
+}
+
+function onChaptersChanged(newChapters) {
+  let shouldAutoSelect = false
+  newChapters.forEach(ch => {
+    const prev = prevChapterStatuses[ch.id]
+    if (prev && prev !== ch.status) {
+      shouldAutoSelect = true
+      nextTick(() => {
+        const el = chapterRefs[ch.id]
+        if (ch.status === 'DONE') {
+          addChapterToast(`第 ${ch.idx} 章生成完成 ✓`)
+          if (el) {
+            gsap.from(el, { scale: 0.96, opacity: 0.6, duration: 0.45, ease: 'back.out(1.7)' })
+            el.classList.add('just-done')
+            setTimeout(() => el.classList.remove('just-done'), 2000)
+          }
+        } else if (ch.status === 'FAILED') {
+          addChapterToast(`第 ${ch.idx} 章生成失败 ✗`)
+        } else if (ch.status === 'GENERATING' && el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }
+      })
+    }
+    prevChapterStatuses[ch.id] = ch.status
+  })
+  // 自动选中章节
+  if (shouldAutoSelect) {
+    nextTick(() => autoSelectChapter(newChapters))
+  }
+}
+
+const chaptersInitialized = ref(false)
+watch(() => chapters.value, (chs) => {
+  if (!chs) return
+  if (chaptersInitialized.value) {
+    onChaptersChanged(chs)
+  } else {
+    chs.forEach(ch => { prevChapterStatuses[ch.id] = ch.status })
+    chaptersInitialized.value = true
+  }
+}, { deep: true })
+
+function startPolling() {
+  stopPolling()
+  pollHandle = setInterval(load, 2500)
+}
+function stopPolling() {
+  if (pollHandle) { clearInterval(pollHandle); pollHandle = null }
+}
+
+onMounted(async () => {
+  await load()
+  await nextTick()
+  animateIn()
+  // 自动选中章节
+  if (chapters.value.length) {
+    autoSelectChapter(chapters.value)
+  }
+  if (project.value && ['GENERATING', 'PENDING'].includes(project.value.status)) {
+    startPolling()
+  }
+})
+
+onBeforeUnmount(stopPolling)
+
+watch(() => project.value?.status, (s, prev) => {
+  if (s && ['GENERATING', 'PENDING'].includes(s)) startPolling()
+  else stopPolling()
+  // Completion celebration
+  if (s && ['COMPLETED', 'PARTIAL_SUCCESS'].includes(s) && prev && ['GENERATING', 'PENDING'].includes(prev)) {
+    nextTick(() => {
+      const bar = document.querySelector('.progress-block')
+      const bench = document.querySelector('.workbench')
+      if (bar) gsap.from(bar, { scale: 1.02, duration: 0.5, ease: 'elastic.out(1, 0.4)' })
+      if (bench) gsap.from(bench, { scale: 0.99, opacity: 0.9, duration: 0.6, ease: 'back.out(1.2)', delay: 0.1 })
+    })
+  }
+})
+
+function animateIn() {
+  gsap.from('.header-row', { y: -8, opacity: 0, duration: 0.5, ease: 'expo.out' })
+  gsap.from('.workbench', { y: 16, opacity: 0, duration: 0.6, ease: 'expo.out', delay: 0.1 })
+}
+
+async function regenerateChapter(chapterId) {
+  try {
+    await api.regenerateChapter(projectId, chapterId)
+    startPolling()
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+async function regenerateAll() {
+  const ok = await showConfirm({
+    title: '重新生成全部章节？',
+    message: '将丢弃当前所有章节的生成结果，并按顺序重新生成。这会消耗额外的 AI 配额。',
+    confirmText: '开始重新生成',
+    cancelText: '再想想'
+  })
+  if (!ok) return
+  try {
+    await api.generate(projectId)
+    startPolling()
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+function selectChapter(ch) {
+  selectedChapter.value = selectedChapter.value?.id === ch.id ? null : ch
+}
+
+function viewFullScript() {
+  selectedChapter.value = null
+}
+
+async function copyYaml() {
+  if (!project.value?.scriptYaml) return
+  try {
+    await navigator.clipboard.writeText(project.value.scriptYaml)
+    flashToast('已复制到剪贴板')
+  } catch {
+    flashToast('复制失败')
+  }
+}
+
+function downloadYaml() {
+  window.open(api.scriptYamlUrl(projectId), '_blank')
+}
+
+const toast = ref('')
+let toastHandle = null
+function flashToast(msg) {
+  toast.value = msg
+  clearTimeout(toastHandle)
+  toastHandle = setTimeout(() => (toast.value = ''), 1800)
+}
+
+function roleLabel(r) {
+  return ({ protagonist: '主角', antagonist: '反派', supporting: '配角', npc: 'NPC' })[r] || r
+}
+
+// 从章节 YAML 中提取出现的人物 ID
+function extractCharacterIds(yamlStr) {
+  if (!yamlStr) return []
+  try {
+    const doc = parseYaml(yamlStr)
+    if (!doc?.scenes) return []
+    const ids = new Set()
+    for (const scene of doc.scenes) {
+      if (Array.isArray(scene.characters)) {
+        scene.characters.forEach(id => ids.add(id))
+      }
+    }
+    return [...ids]
+  } catch { return [] }
+}
+
+// 右侧人物面板：选章时从该章 YAML 直接解析，否则用全局人物表
+const displayCharacters = computed(() => {
+  if (!selectedChapter.value) {
+    return project.value?.characters || []
+  }
+  // 优先从章节 YAML 的 characters 段直接提取
+  if (selectedChapter.value.generatedYaml) {
+    try {
+      const parsed = parseYaml(selectedChapter.value.generatedYaml)
+      const chars = parsed?.characters
+      if (chars?.length) {
+        return chars.map(c => ({
+          charId: c.id,
+          name: c.name,
+          role: c.role || 'npc'
+        }))
+      }
+    } catch { /* fall through */ }
+  }
+  // 兜底：用全局人物表按场景角色 ID 过滤
+  const all = project.value?.characters || []
+  const charIds = extractCharacterIds(selectedChapter.value.generatedYaml)
+  if (charIds.length) return all.filter(c => charIds.includes(c.charId))
+  return []
+})
+
+// 自动选中章节：生成中 → 完成后自动跳到下一个生成中的
+function autoSelectChapter(chs) {
+  const sorted = [...chs].sort((a, b) => a.idx - b.idx)
+  // 当前选中章节仍在生成 → 保持不动
+  if (selectedChapter.value) {
+    const cur = sorted.find(c => c.id === selectedChapter.value.id)
+    if (cur && cur.status === 'GENERATING') return
+    // 当前章节已完成 → 跳到下一个生成中的
+    if (cur && (cur.status === 'DONE' || cur.status === 'FAILED')) {
+      const next = sorted.find(c => c.status === 'GENERATING')
+      if (next) { selectedChapter.value = next; return }
+      selectedChapter.value = null
+      return
+    }
+  }
+  // 未选中 → 选第一个生成中的
+  if (!selectedChapter.value) {
+    const gen = sorted.find(c => c.status === 'GENERATING')
+    if (gen) selectedChapter.value = gen
+  }
+}
+</script>
+
+<template>
+  <section class="project">
+    <div class="container">
+      <div v-if="loading" class="loading">
+        <span class="spinner-lg" />
+        <span>加载中…</span>
+      </div>
+
+      <template v-else-if="project">
+        <!-- Header -->
+        <div class="header-row">
+          <div class="meta">
+            <p class="eyebrow">剧本工作台</p>
+            <h1 class="headline">{{ project.title }}</h1>
+            <p class="body-sm subtle">
+              {{ project.sourceNovel || '未填写原著' }} · {{ project.genre || '未填写题材' }}
+              · 共 {{ project.totalChapters }} 章
+            </p>
+          </div>
+          <div class="meta-actions">
+            <StatusBadge :status="project.status" />
+            <button class="btn btn-secondary" @click="copyYaml" :disabled="!project.scriptYaml">
+              <span>复制 YAML</span>
+            </button>
+            <button class="btn btn-primary" @click="downloadYaml" :disabled="!project.scriptYaml">
+              <span>下载 YAML</span>
+            </button>
+          </div>
+        </div>
+
+        <ProgressBar
+          v-if="liveTotal"
+          :progress="liveProgress"
+          :current="liveCurrent"
+          :total="liveTotal"
+          :status="project.status"
+          :chapters="displayChaptersForBar"
+        />
+
+        <div v-if="error" class="error-bar">⚠ {{ error }}</div>
+
+        <!-- Three column workbench -->
+        <div class="workbench">
+          <!-- Chapter list -->
+          <aside class="panel panel-left">
+            <header class="panel-head">
+              <h3 class="card-title">章节</h3>
+              <div class="panel-actions">
+                <span class="badge-count">{{ chapters.length }}</span>
+                <button
+                  class="btn btn-tertiary btn-mini"
+                  @click="regenerateAll"
+                  :disabled="project.status === 'GENERATING'"
+                  title="全部重新生成"
+                >↻ 全部</button>
+              </div>
+            </header>
+            <ol class="chapters">
+              <li
+                v-for="ch in displayChapters"
+                :key="ch.id"
+                :ref="(el) => setChapterRef(el, ch.id)"
+                class="chapter"
+                :class="[`is-${ch.displayStatus.toLowerCase()}`, { 'is-selected': selectedChapter?.id === ch.id }]"
+                @click="selectChapter(ch)"
+              >
+                <div class="chapter-line">
+                  <span class="ch-num">{{ String(ch.idx).padStart(2, '0') }}</span>
+                  <span class="ch-title">{{ ch.title }}</span>
+                  <button
+                    class="btn btn-tertiary btn-mini btn-regen"
+                    @click.stop="regenerateChapter(ch.id)"
+                    :disabled="['GENERATING','PENDING'].includes(ch.status)"
+                    title="重新生成"
+                  >↻</button>
+                </div>
+                <div class="chapter-sub">
+                  <span class="badge" :class="statusTone(ch.displayStatus)">
+                    {{ statusLabel(ch.displayStatus) }}
+                  </span>
+                  <span v-if="ch.sceneCount" class="caption">{{ ch.sceneCount }} 场</span>
+                </div>
+                <div v-if="ch.errorMessage" class="ch-error caption">{{ ch.errorMessage }}</div>
+              </li>
+            </ol>
+          </aside>
+
+          <!-- Editor -->
+          <main class="panel panel-main">
+            <header class="panel-head">
+              <div class="editor-title">
+                <h3 class="card-title">
+                  {{ selectedChapter ? `第 ${selectedChapter.idx} 章` : '剧本' }}
+                  <span v-if="selectedChapter?.status === 'GENERATING'" class="writing-badge">
+                    <span class="writing-dot" />AI 生成中
+                  </span>
+                </h3>
+                <button
+                  v-if="selectedChapter"
+                  class="btn btn-tertiary btn-mini"
+                  @click="viewFullScript"
+                >查看完整剧本</button>
+              </div>
+              <div class="panel-tabs">
+                <button
+                  class="panel-tab"
+                  :class="{ active: viewMode === 'script' }"
+                  @click="switchView('script')"
+                >剧本</button>
+                <button
+                  class="panel-tab"
+                  :class="{ active: viewMode === 'yaml' }"
+                  @click="switchView('yaml')"
+                >YAML</button>
+              </div>
+            </header>
+            <ScriptRender
+              v-if="viewMode === 'script'"
+              ref="scriptRenderRef"
+              :yaml="selectedChapter?.generatedYaml || project.scriptYaml"
+              :is-generating="(selectedChapter && selectedChapter.status === 'GENERATING') || (!selectedChapter && ['GENERATING','PENDING'].includes(project.status))"
+            />
+            <ScriptEditor
+              v-else
+              ref="editorRef"
+              :yaml="selectedChapter?.generatedYaml || project.scriptYaml"
+              :read-only="true"
+            />
+          </main>
+
+          <!-- Right panel: characters + scenes summary -->
+          <aside class="panel panel-right">
+            <header class="panel-head">
+              <h3 class="card-title">人物</h3>
+              <span class="badge-count">{{ displayCharacters.length }}</span>
+            </header>
+            <ul class="char-list">
+              <li v-for="c in displayCharacters" :key="c.charId" class="char-item">
+                <span class="char-avatar" :class="c.role === 'protagonist' ? 'protagonist' : (c.role === 'antagonist' ? 'antagonist' : '')">{{ (c.name || '?').slice(0,1) }}</span>
+                <div class="char-info">
+                  <span class="char-name">{{ c.name }}</span>
+                  <span class="char-id mono">{{ c.charId }}</span>
+                </div>
+                <span class="badge" :class="c.role === 'protagonist' ? 'success' : (c.role === 'antagonist' ? 'error' : '')">
+                  {{ roleLabel(c.role) }}
+                </span>
+              </li>
+              <li v-if="!displayCharacters.length" class="char-empty">
+                <span class="char-empty-icon">👤</span>
+                <span class="body-sm subtle">{{ selectedChapter ? '该章节暂无人物' : '剧本生成后自动列出人物' }}</span>
+              </li>
+            </ul>
+
+            <div v-if="project.errorMessage" class="project-error">
+              <p class="eyebrow error-text">生成异常</p>
+              <p class="body-sm">{{ project.errorMessage }}</p>
+            </div>
+          </aside>
+        </div>
+      </template>
+
+      <div v-else class="error-bar">未找到项目 #{{ projectId }}</div>
+    </div>
+
+    <transition name="toast">
+      <div v-if="toast" class="toast">{{ toast }}</div>
+    </transition>
+    <!-- Chapter completion notifications -->
+    <div class="chapter-toast-stack" v-if="chapterToasts.length">
+      <transition-group name="chapter-toast">
+        <div
+          v-for="t in chapterToasts"
+          :key="t.id"
+          class="chapter-toast-item"
+        >{{ t.msg }}</div>
+      </transition-group>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.project { padding: var(--space-lg) 0 var(--space-section); min-height: calc(100vh - 56px); }
+
+.loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--space-md); padding: var(--space-xxl);
+  color: var(--color-ink-subtle);
+}
+.spinner-lg {
+  width: 24px; height: 24px;
+  border: 2.5px solid var(--color-hairline-strong);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.header-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+.meta .eyebrow { margin-bottom: 6px; }
+.meta h1 { margin: 0 0 6px; }
+.meta-actions { display: flex; gap: var(--space-sm); align-items: center; }
+
+.error-bar {
+  background: rgba(240,104,104,0.06);
+  border: 1px solid rgba(240,104,104,0.2);
+  color: var(--color-semantic-error);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-body-sm);
+  margin-bottom: var(--space-md);
+}
+
+.workbench {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  gap: var(--space-md);
+  align-items: start;
+}
+.panel {
+  position: relative;
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-height: 600px;
+}
+.panel::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+  pointer-events: none;
+}
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-md) var(--space-md);
+  border-bottom: 1px solid var(--color-hairline);
+}
+.panel-head h3 { margin: 0; }
+.panel-actions {
+  display: flex; align-items: center; gap: var(--space-sm);
+}
+.badge-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--color-ink-subtle);
+  background: var(--color-surface-2);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.panel-left { padding-bottom: var(--space-md); }
+.chapters { list-style: none; padding: 0; margin: 0; max-height: 70vh; overflow: auto; }
+.chapter {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: var(--space-sm);
+  row-gap: 4px;
+  padding: 12px var(--space-md);
+  border-bottom: 1px solid var(--color-hairline);
+  transition: background var(--duration-fast) var(--ease-out-quad);
+}
+.chapter:hover { background: var(--color-surface-2); }
+.chapter:last-child { border-bottom: 0; }
+.chapter.is-selected {
+  background: var(--color-primary-soft);
+  border-left: 3px solid var(--color-primary);
+}
+.chapter-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ch-num {
+  font-family: var(--font-mono);
+  color: var(--color-primary);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+.ch-title {
+  font-size: var(--text-body-sm);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chapter-sub { display: flex; align-items: center; gap: 8px; }
+.chapter-sub .badge { font-size: 10px; height: 18px; padding: 0 6px; }
+.chapter-sub .badge::before { display: none; }
+
+.btn-mini { font-size: var(--text-caption); height: 24px; padding: 0 8px; }
+.btn-regen {
+  font-size: 14px;
+  width: 24px; height: 24px;
+  padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out-quad);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.btn-regen:disabled {
+  opacity: 0;
+  cursor: not-allowed;
+}
+.chapter:hover .btn-regen { opacity: 1; }
+.chapter:hover .btn-regen:disabled { opacity: 0.35; }
+.ch-error { grid-column: 1 / -1; color: var(--color-semantic-error); font-size: var(--text-caption); }
+
+.panel-main { display: flex; flex-direction: column; }
+.panel-main .panel-head { flex: 0 0 auto; }
+.panel-main :deep(.cm-editor) { flex: 1; }
+.editor-title {
+  display: flex; align-items: center; gap: var(--space-sm);
+}
+.editor-title h3 { margin: 0; display: flex; align-items: center; gap: var(--space-sm); }
+
+/* Writing indicator */
+.writing-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: var(--text-caption);
+  font-weight: 400;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(108,123,240,0.2);
+}
+.writing-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: writing-pulse 1s ease-in-out infinite;
+}
+@keyframes writing-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50%      { opacity: 1;   transform: scale(1.4); }
+}
+
+/* Panel tabs (剧本 / YAML switch) */
+.panel-tabs {
+  display: flex; gap: 2px;
+  background: var(--color-canvas);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+.panel-tab {
+  padding: 4px 12px;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--color-ink-subtle);
+  border-radius: var(--radius-xs);
+  transition: all var(--duration-fast) var(--ease-out-quad);
+}
+.panel-tab.active {
+  background: var(--color-surface-2);
+  color: var(--color-ink);
+}
+.panel-tab:hover:not(.active) { color: var(--color-ink-muted); }
+
+.panel-right { padding-bottom: var(--space-md); }
+.char-list { list-style: none; padding: 0 var(--space-md); margin: 0; }
+.char-item {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-hairline);
+}
+.char-item:last-child { border-bottom: 0; }
+.char-avatar {
+  width: 36px; height: 36px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--color-surface-3);
+  color: var(--color-ink);
+  font-weight: 600; font-size: var(--text-body-sm);
+  border: 1px solid var(--color-hairline-strong);
+  transition: all var(--duration-fast) var(--ease-out-quad);
+}
+.char-avatar.protagonist {
+  background: rgba(61,214,140,0.1);
+  border-color: rgba(61,214,140,0.3);
+  color: var(--color-semantic-success);
+}
+.char-avatar.antagonist {
+  background: rgba(240,104,104,0.1);
+  border-color: rgba(240,104,104,0.3);
+  color: var(--color-semantic-error);
+}
+.char-info { display: flex; flex-direction: column; min-width: 0; }
+.char-name { font-size: var(--text-body-sm); color: var(--color-ink); font-weight: 500; }
+.char-id { font-size: 10px; color: var(--color-ink-subtle); }
+.char-item .badge { font-size: 10px; height: 18px; padding: 0 6px; }
+.char-item .badge::before { display: none; }
+
+.char-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: var(--space-lg) 0;
+}
+.char-empty-icon { font-size: 28px; opacity: 0.4; }
+
+.project-error {
+  margin: var(--space-md);
+  padding: var(--space-md);
+  background: rgba(240,180,41,0.06);
+  border: 1px solid rgba(240,180,41,0.2);
+  border-radius: var(--radius-md);
+}
+.error-text { color: var(--color-semantic-warning); margin: 0 0 4px; }
+
+/* Chapter completion glow */
+.chapter.just-done {
+  animation: done-flash 1.8s var(--ease-out-cubic) forwards;
+}
+@keyframes done-flash {
+  0%   { box-shadow: inset 0 0 0 0 rgba(61,214,140,0.3); background: rgba(61,214,140,0.05); }
+  25%  { box-shadow: inset 0 0 24px 6px rgba(61,214,140,0.12); background: rgba(61,214,140,0.1); }
+  100% { box-shadow: inset 0 0 0 0 rgba(61,214,140,0); background: transparent; }
+}
+
+/* Generating chapter left-edge pulse */
+.chapter.is-generating {
+  animation: gen-pulse 2s ease-in-out infinite;
+}
+@keyframes gen-pulse {
+  0%, 100% { box-shadow: inset 3px 0 0 0 rgba(108,123,240,0.25); }
+  50%      { box-shadow: inset 3px 0 0 0 rgba(108,123,240,0.55); }
+}
+
+/* Chapter toast stack */
+.chapter-toast-stack {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  z-index: 210;
+  pointer-events: none;
+}
+.chapter-toast-item {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-hairline-strong);
+  color: var(--color-ink);
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-body-sm);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  white-space: nowrap;
+}
+.chapter-toast-enter-active {
+  transition: all 0.35s var(--ease-out-cubic);
+}
+.chapter-toast-leave-active {
+  transition: all 0.25s var(--ease-in-out-cubic);
+}
+.chapter-toast-enter-from {
+  opacity: 0;
+  transform: translateX(20px) scale(0.95);
+}
+.chapter-toast-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-hairline-strong);
+  color: var(--color-ink);
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-body-sm);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  z-index: 200;
+}
+.toast-enter-active, .toast-leave-active { transition: all 240ms var(--ease-out-cubic); }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
+
+@media (max-width: 1100px) {
+  .workbench { grid-template-columns: 1fr; }
+  .panel { min-height: auto; }
+  .chapters { max-height: 240px; }
+}
+</style>

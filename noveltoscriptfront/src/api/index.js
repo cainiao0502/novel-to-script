@@ -5,9 +5,34 @@ const http = axios.create({
   timeout: 180000
 })
 
+// Request interceptor: attach auth token
+http.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token')
+  if (token) {
+    config.headers.Authorization = token
+  }
+  return config
+})
+
+// Response interceptor: unwrap ApiResult, handle errors + 401
 http.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    const body = r.data
+    if (body && typeof body === 'object' && 'success' in body) {
+      if (!body.success) {
+        return Promise.reject(new Error(body.message || '请求失败'))
+      }
+      return body
+    }
+    return r
+  },
   (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('auth_user')
+      window.location.href = '/login'
+      return Promise.reject(new Error('登录已过期，请重新登录'))
+    }
     const data = err.response?.data
     const message = data?.message || data?.error || err.message
     return Promise.reject(new Error(message))
@@ -54,7 +79,30 @@ export const api = {
     const params = refresh ? '?refresh=true' : ''
     return http.post(`/projects/${projectId}/analyze-emotions${params}`).then((r) => r.data)
   },
+  analyzeChapterEmotions(projectId, chapterId) {
+    return http.post(`/projects/${projectId}/chapters/${chapterId}/analyze-emotions`).then((r) => r.data)
+  },
   getEmotions(projectId) {
     return http.get(`/projects/${projectId}/emotions`).then((r) => r.data)
+  },
+
+  // Auth
+  sendCode(body) {
+    return http.post('/user/code/send', body).then((r) => r.data)
+  },
+  register(body) {
+    return http.post('/user/register', body).then((r) => r.data)
+  },
+  login(body) {
+    return http.post('/user/login', body).then((r) => r.data)
+  },
+  logout() {
+    return http.post('/user/logout').then((r) => r.data)
+  },
+  getCaptcha() {
+    return http.get('/captcha/get').then((r) => r.data)
+  },
+  checkCaptcha(body) {
+    return http.post('/captcha/check', body).then((r) => r.data)
   }
 }

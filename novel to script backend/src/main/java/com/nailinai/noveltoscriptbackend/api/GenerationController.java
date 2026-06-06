@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/projects/{id}")
+@RequestMapping("/projects/{id}")
 public class GenerationController {
 
     private final ScriptGenerationService service;

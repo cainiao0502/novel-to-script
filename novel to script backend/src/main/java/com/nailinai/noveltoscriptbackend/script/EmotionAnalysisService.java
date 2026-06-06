@@ -178,6 +178,31 @@ public class EmotionAnalysisService {
         }
     }
 
+    // ── Chapter-level cache ──
+
+    public List<EmotionArc> analyzeChapterAndCache(long chapterId, String yaml) {
+        List<EmotionArc> result = analyze(yaml);
+        String cacheKey = chapterCacheKey(chapterId);
+        try {
+            redis.opsForValue().set(cacheKey, json.writeValueAsString(result), CACHE_TTL);
+        } catch (Exception e) {
+            log.warn("Failed to cache chapter emotion analysis for chapter {}: {}", chapterId, e.getMessage());
+        }
+        return result;
+    }
+
+    public List<EmotionArc> getCachedChapter(long chapterId) {
+        String cacheKey = chapterCacheKey(chapterId);
+        Object cached = redis.opsForValue().get(cacheKey);
+        if (cached == null) return null;
+        try {
+            return json.readValue(cached.toString(), new TypeReference<List<EmotionArc>>() {});
+        } catch (Exception e) {
+            log.warn("Failed to deserialize cached chapter emotion analysis: {}", e.getMessage());
+            return null;
+        }
+    }
+
     // ── Prompt building ──
 
     private String buildPrompt(List<Character> characters, List<Scene> scenes) {
@@ -307,6 +332,10 @@ public class EmotionAnalysisService {
 
     private String cacheKey(long projectId) {
         return "emotion:analysis:" + CACHE_VERSION + ":" + projectId;
+    }
+
+    private String chapterCacheKey(long chapterId) {
+        return "emotion:chapter:analysis:" + CACHE_VERSION + ":" + chapterId;
     }
 
     // ── Data records ──

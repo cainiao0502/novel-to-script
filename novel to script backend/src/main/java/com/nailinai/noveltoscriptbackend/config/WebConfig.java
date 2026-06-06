@@ -31,7 +31,7 @@ public class WebConfig implements WebMvcConfigurer {
 
         FilterRegistrationBean<RateLimitFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new RateLimitFilter(stringRedisTemplate, properties));
-        registration.addUrlPatterns("/api/projects/*");
+        registration.addUrlPatterns("/projects/*");
         registration.setOrder(-100);
         registration.setName("rateLimitFilter");
         return registration;

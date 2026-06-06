@@ -7,7 +7,9 @@ import com.nailinai.noveltoscriptbackend.domain.entity.ChapterStatus;
 import com.nailinai.noveltoscriptbackend.domain.entity.ProjectCharacterEntity;
 import com.nailinai.noveltoscriptbackend.domain.entity.ProjectEntity;
 import com.nailinai.noveltoscriptbackend.domain.entity.ProjectStatus;
+import com.nailinai.noveltoscriptbackend.domain.entity.EmotionAnalysisEntity;
 import com.nailinai.noveltoscriptbackend.persistence.mapper.ChapterMapper;
+import com.nailinai.noveltoscriptbackend.persistence.mapper.EmotionAnalysisMapper;
 import com.nailinai.noveltoscriptbackend.persistence.mapper.ProjectCharacterMapper;
 import com.nailinai.noveltoscriptbackend.persistence.mapper.ProjectMapper;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -32,17 +34,20 @@ public class ProjectStore {
     private final ProjectMapper projectMapper;
     private final ChapterMapper chapterMapper;
     private final ProjectCharacterMapper characterMapper;
+    private final EmotionAnalysisMapper emotionAnalysisMapper;
     private final RedisTemplate<String, Object> redis;
     private final ObjectMapper json;
 
     public ProjectStore(ProjectMapper projectMapper,
                         ChapterMapper chapterMapper,
                         ProjectCharacterMapper characterMapper,
+                        EmotionAnalysisMapper emotionAnalysisMapper,
                         RedisTemplate<String, Object> redis,
                         ObjectMapper json) {
         this.projectMapper = projectMapper;
         this.chapterMapper = chapterMapper;
         this.characterMapper = characterMapper;
+        this.emotionAnalysisMapper = emotionAnalysisMapper;
         this.redis = redis;
         this.json = json;
     }
@@ -253,6 +258,29 @@ public class ProjectStore {
         p.setScriptYaml(yaml);
         p.setUpdatedAt(Instant.now());
         projectMapper.updateById(p);
+    }
+
+    // ============ Emotion analysis (database) ============
+
+    public String getEmotionAnalysisResult(long projectId) {
+        EmotionAnalysisEntity e = emotionAnalysisMapper.findByProjectId(projectId);
+        return e == null ? null : e.getResultJson();
+    }
+
+    public String getChapterEmotionAnalysisResult(long projectId, long chapterId) {
+        EmotionAnalysisEntity e = emotionAnalysisMapper.findByChapterId(projectId, chapterId);
+        return e == null ? null : e.getResultJson();
+    }
+
+    public void saveEmotionAnalysisResult(long projectId, Long chapterId, String resultJson) {
+        EmotionAnalysisEntity e = new EmotionAnalysisEntity();
+        e.setProjectId(projectId);
+        e.setChapterId(chapterId);
+        e.setResultJson(resultJson);
+        Instant now = Instant.now();
+        e.setCreatedAt(now);
+        e.setUpdatedAt(now);
+        emotionAnalysisMapper.insert(e);
     }
 
     // ============ Redis progress ============

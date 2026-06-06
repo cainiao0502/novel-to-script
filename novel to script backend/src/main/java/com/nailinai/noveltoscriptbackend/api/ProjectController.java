@@ -25,11 +25,13 @@ import org.springframework.web.multipart.MultipartFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/projects")
+@RequestMapping("/projects")
 public class ProjectController {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectController.class);
@@ -37,13 +39,16 @@ public class ProjectController {
     private final NovelIngestService ingest;
     private final ProjectStore store;
     private final EmotionAnalysisService emotionAnalysis;
+    private final ObjectMapper json;
 
     public ProjectController(NovelIngestService ingest,
                              ProjectStore store,
-                             EmotionAnalysisService emotionAnalysis) {
+                             EmotionAnalysisService emotionAnalysis,
+                             ObjectMapper json) {
         this.ingest = ingest;
         this.store = store;
         this.emotionAnalysis = emotionAnalysis;
+        this.json = json;
     }
 
     /** 列出当前用户的所有项目（轻量级摘要）。 */
@@ -140,9 +145,8 @@ public class ProjectController {
     }
 
     /**
-     * 触发全剧情绪曲线分析（按角色维度）。
-     * 返回每个角色的情绪弧线数组，按 protagonist → antagonist → supporting → npc 排序。
-     * 结果缓存 1 小时，重复调用直接走缓存。
+     * 触发全剧情绪曲线分析。
+     * 结果入库持久化，再次请求直接查库返回。
      */
     @PostMapping("/{id}/analyze-emotions")
     public ResponseEntity<?> analyzeEmotions(@PathVariable long id,
@@ -158,21 +162,78 @@ public class ProjectController {
                     .body(Map.of("error", "Script not ready. Generate the script first."));
         }
 
-        // 检查缓存（refresh=true 时跳过）
+        // 先查库（refresh=true 时跳过）
         if (!refresh) {
-            List<EmotionAnalysisService.EmotionArc> cached = emotionAnalysis.getCached(id);
-            if (cached != null) {
-                return ResponseEntity.ok(Map.of("arcs", cached, "source", "cache"));
+            String cachedJson = store.getEmotionAnalysisResult(id);
+            if (cachedJson != null) {
+                try {
+                    List<EmotionAnalysisService.EmotionArc> cached = json.readValue(cachedJson,
+                            new TypeReference<List<EmotionAnalysisService.EmotionArc>>() {});
+                    return ResponseEntity.ok(Map.of("arcs", cached, "source", "cache"));
+                } catch (Exception e) {
+                    log.warn("Failed to deserialize stored emotion analysis, re-analyzing: {}", e.getMessage());
+                }
             }
         }
 
         try {
-            List<EmotionAnalysisService.EmotionArc> result = emotionAnalysis.analyzeAndCache(id, yaml);
+            List<EmotionAnalysisService.EmotionArc> result = emotionAnalysis.analyze(yaml);
+            String resultJson = json.writeValueAsString(result);
+            store.saveEmotionAnalysisResult(id, null, resultJson);
             return ResponseEntity.ok(Map.of("arcs", result, "source", "fresh"));
         } catch (Exception e) {
             log.error("Emotion analysis failed for project {}", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Analysis failed: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 单章情绪曲线分析。
+     * 取该章节的 generated_yaml，仅分析该章内角色在各场戏中的情绪。
+     */
+    @PostMapping("/{id}/chapters/{chapterId}/analyze-emotions")
+    public ResponseEntity<?> analyzeChapterEmotions(
+            @PathVariable long id,
+            @PathVariable long chapterId) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        ProjectEntity p = store.findProject(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p, userId);
+
+        ChapterEntity ch = store.findChapter(chapterId)
+                .orElseThrow(() -> new ResourceNotFoundException("Chapter not found: " + chapterId));
+        if (!ch.getProjectId().equals(id)) {
+            throw new IllegalArgumentException("Chapter does not belong to project " + id);
+        }
+
+        String yaml = ch.getGeneratedYaml();
+        if (yaml == null || yaml.isBlank()) {
+            return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED)
+                    .body(Map.of("error", "Chapter script not ready. Generate the script first."));
+        }
+
+        // 先查库
+        String cachedJson = store.getChapterEmotionAnalysisResult(id, chapterId);
+        if (cachedJson != null) {
+            try {
+                List<EmotionAnalysisService.EmotionArc> cached = json.readValue(cachedJson,
+                        new TypeReference<List<EmotionAnalysisService.EmotionArc>>() {});
+                return ResponseEntity.ok(Map.of("arcs", cached, "source", "cache"));
+            } catch (Exception e) {
+                log.warn("Failed to deserialize stored chapter emotion analysis, re-analyzing: {}", e.getMessage());
+            }
+        }
+
+        try {
+            List<EmotionAnalysisService.EmotionArc> result = emotionAnalysis.analyze(yaml);
+            String resultJson = json.writeValueAsString(result);
+            store.saveEmotionAnalysisResult(id, chapterId, resultJson);
+            return ResponseEntity.ok(Map.of("arcs", result, "source", "fresh"));
+        } catch (Exception e) {
+            log.error("Chapter emotion analysis failed for project {} chapter {}", id, chapterId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Chapter analysis failed: " + e.getMessage()));
         }
     }
 
@@ -183,12 +244,20 @@ public class ProjectController {
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
         checkOwnership(p, userId);
 
-        List<EmotionAnalysisService.EmotionArc> cached = emotionAnalysis.getCached(id);
-        if (cached == null) {
+        String resultJson = store.getEmotionAnalysisResult(id);
+        if (resultJson == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", "No cached analysis. POST /analyze-emotions first."));
+                    .body(Map.of("error", "No analysis found. POST /analyze-emotions first."));
         }
-        return ResponseEntity.ok(Map.of("arcs", cached));
+        try {
+            List<EmotionAnalysisService.EmotionArc> arcs = json.readValue(resultJson,
+                    new TypeReference<List<EmotionAnalysisService.EmotionArc>>() {});
+            return ResponseEntity.ok(Map.of("arcs", arcs));
+        } catch (Exception e) {
+            log.error("Failed to deserialize emotion analysis for project {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to read stored analysis."));
+        }
     }
 
     @GetMapping("/{id}/script.yaml")

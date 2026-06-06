@@ -25,7 +25,8 @@ const props = defineProps({
     default: () => []
     // Each item: { charId, charName, role, emotions: [{ sceneId, intensity, dominantEmotion, tags }] }
   },
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  context: { type: String, default: '全剧' }
 })
 
 // ── Character selection ──
@@ -278,7 +279,7 @@ onBeforeUnmount(() => {
     <!-- Loading -->
     <div v-if="loading" class="ec-loading">
       <span class="spinner-lg" />
-      <p class="body-sm subtle">AI 正在分析全剧情绪曲线…</p>
+      <p class="body-sm subtle">AI 正在分析{{ context }}情绪曲线…</p>
     </div>
 
     <!-- Empty -->

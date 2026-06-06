@@ -33,6 +33,8 @@ const isFullscreen = ref(false)
 // ── Emotion curve ──
 const emotionData = ref(null) // { arcs: [...], source: 'cache'|'fresh' }
 const emotionLoading = ref(false)
+const chapterEmotionCache = ref({}) // { [chapterId]: data }
+const chapterEmotionLoading = ref(false)
 const { confirm: showConfirm } = useConfirm()
 
 function toggleFullscreen() {
@@ -45,6 +47,10 @@ function switchView(mode) {
   nextTick(() => {
     if (mode === 'script') scriptRenderRef.value?.animateIn()
   })
+  // 切换视图时清除情感数据缓存
+  if (mode !== 'emotion') {
+    chapterEmotionCache.value = {}
+  }
 }
 
 async function analyzeEmotions() {
@@ -58,6 +64,35 @@ async function analyzeEmotions() {
     showError('情感分析失败：' + e.message)
   } finally {
     emotionLoading.value = false
+  }
+}
+
+async function analyzeChapterEmotions(chapterId) {
+  // 已有缓存直接跳过
+  if (chapterEmotionCache.value[chapterId]) return
+  if (chapterEmotionLoading.value) return
+  chapterEmotionLoading.value = true
+  try {
+    const result = await api.analyzeChapterEmotions(projectId, chapterId)
+    chapterEmotionCache.value = { ...chapterEmotionCache.value, [chapterId]: result }
+  } catch (e) {
+    showError('章节情感分析失败：' + e.message)
+  } finally {
+    chapterEmotionLoading.value = false
+  }
+}
+
+function openEmotionAnalysis() {
+  if (viewMode.value !== 'emotion') return
+  if (selectedChapter.value) {
+    const cid = selectedChapter.value.id
+    if (!chapterEmotionCache.value[cid] && !chapterEmotionLoading.value) {
+      analyzeChapterEmotions(cid)
+    }
+  } else {
+    if (!emotionData.value && !emotionLoading.value) {
+      analyzeEmotions()
+    }
   }
 }
 
@@ -232,6 +267,16 @@ watch(() => project.value?.status, (s, prev) => {
       if (bar) gsap.from(bar, { scale: 1.02, duration: 0.5, ease: 'power2.out' })
       if (bench) gsap.from(bench, { scale: 0.99, opacity: 0.9, duration: 0.6, ease: 'power2.out', delay: 0.1 })
     })
+  }
+})
+
+// 切换选中章节时自动加载章节情感曲线（有缓存则不重复请求）
+watch(selectedChapter, (ch) => {
+  if (viewMode.value === 'emotion' && ch) {
+    const cid = ch.id
+    if (!chapterEmotionCache.value[cid] && !chapterEmotionLoading.value) {
+      analyzeChapterEmotions(cid)
+    }
   }
 })
 
@@ -618,7 +663,7 @@ function autoSelectChapter(chs) {
                     <button
                       class="etab"
                       :class="{ active: viewMode === 'emotion' }"
-                      @click="switchView('emotion'); if (!emotionData && !emotionLoading) analyzeEmotions()"
+                      @click="switchView('emotion'); openEmotionAnalysis()"
                     >情感曲线</button>
                   </div>
                   <span class="ph-context" v-if="selectedChapter">第 {{ selectedChapter.idx }} 章</span>
@@ -669,8 +714,9 @@ function autoSelectChapter(chs) {
               />
               <EmotionCurve
                 v-else-if="viewMode === 'emotion'"
-                :arcs="emotionData?.arcs || []"
-                :loading="emotionLoading"
+                :arcs="selectedChapter ? (chapterEmotionCache[selectedChapter.id]?.arcs || []) : (emotionData?.arcs || [])"
+                :loading="selectedChapter ? (chapterEmotionLoading && !chapterEmotionCache[selectedChapter.id]) : emotionLoading"
+                :context="selectedChapter ? `第 ${selectedChapter.idx} 章` : '全剧'"
               />
             </template>
           </main>

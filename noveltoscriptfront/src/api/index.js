@@ -9,7 +9,7 @@ http.interceptors.response.use(
   (r) => r,
   (err) => {
     const data = err.response?.data
-    const message = data?.message || err.message
+    const message = data?.message || data?.error || err.message
     return Promise.reject(new Error(message))
   }
 )

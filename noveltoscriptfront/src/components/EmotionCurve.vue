@@ -61,7 +61,7 @@ const emotionColors = {
   '从容': 'rgba(20, 184, 166, 0.9)',
   '忧虑': 'rgba(161, 98, 7, 0.9)',
   '未出场': 'rgba(148, 163, 184, 0.5)',
-  '__default': 'rgba(108, 123, 240, 0.9)'
+  '__default': 'rgba(125, 154, 110, 0.9)'
 }
 
 function colorFor(emotion) {
@@ -83,8 +83,8 @@ const chartData = computed(() => {
       {
         label: selectedArc.value?.charName || '情绪强度',
         data: intensities,
-        borderColor: 'rgba(108,123,240,0.9)',
-        backgroundColor: 'rgba(108,123,240,0.06)',
+        borderColor: 'rgba(125,154,110,0.9)',
+        backgroundColor: 'rgba(125,154,110,0.06)',
         pointBackgroundColor: colors,
         pointBorderColor: colors,
         pointRadius: 5,
@@ -220,7 +220,7 @@ function showOverlay(x, y, idx, color) {
       gsap.killTweensOf(dotRef.value)
       gsap.fromTo(dotRef.value,
         { attr: { cx: x, cy: y, r: 0 } },
-        { attr: { r: 6, cx: x, cy: y }, duration: 0.4, ease: 'back.out(2.4)' }
+        { attr: { r: 6, cx: x, cy: y }, duration: 0.4, ease: 'power2.out' }
       )
     }
   } else {
@@ -234,7 +234,7 @@ function showOverlay(x, y, idx, color) {
     }
     if (dotRef.value) {
       gsap.killTweensOf(dotRef.value)
-      gsap.to(dotRef.value, { attr: { cx: x, cy: y }, duration: 0.25, ease: 'back.out(1.4)' })
+      gsap.to(dotRef.value, { attr: { cx: x, cy: y }, duration: 0.25, ease: 'power2.out' })
     }
   }
 }
@@ -283,7 +283,10 @@ onBeforeUnmount(() => {
 
     <!-- Empty -->
     <div v-else-if="!arcs.length" class="ec-empty">
-      <span class="empty-icon">📈</span>
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+        <polyline points="17 6 23 6 23 12"/>
+      </svg>
       <p class="body-sm subtle">尚未分析情绪曲线</p>
     </div>
 
@@ -456,7 +459,7 @@ onBeforeUnmount(() => {
   stroke-dasharray: 3 4;
   opacity: 0;
   color: var(--color-ink-subtle);
-  filter: drop-shadow(0 0 4px rgba(108, 123, 240, 0.4));
+  filter: drop-shadow(0 0 4px rgba(125, 154, 110, 0.4));
 }
 .ec-glow {
   fill: currentColor;

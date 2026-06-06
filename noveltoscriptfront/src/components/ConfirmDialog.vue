@@ -61,7 +61,6 @@ onUnmounted(() => {
             aria-modal="true"
             :aria-labelledby="'cd-title'"
           >
-            <div class="cd-border" />
             <div class="cd-inner">
               <div class="cd-icon">
                 <svg v-if="state.variant === 'danger'" viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
@@ -111,48 +110,28 @@ onUnmounted(() => {
   justify-content: center;
   padding: var(--space-lg);
   background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
 }
 
 .cd-card {
   position: relative;
   width: 100%;
-  max-width: 420px;
-  border-radius: var(--radius-xl);
+  max-width: 400px;
+  border-radius: var(--radius-lg);
   transform-origin: center;
-}
-
-.cd-border {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius-xl);
-  padding: 1px;
-  background: var(--gradient-card-border);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-.cd-danger .cd-border {
-  background: linear-gradient(135deg, rgba(240, 104, 104, 0.35) 0%, rgba(240, 104, 104, 0.05) 100%);
+  border: 1px solid var(--color-hairline);
+  background: var(--color-surface-1);
 }
 
 .cd-inner {
-  position: relative;
-  background: var(--color-surface-1);
-  border-radius: var(--radius-xl);
   padding: var(--space-xl) var(--space-xl) var(--space-lg);
-  box-shadow:
-    0 24px 64px rgba(0, 0, 0, 0.55),
-    0 2px 6px rgba(0, 0, 0, 0.35);
   text-align: center;
 }
 
 .cd-icon {
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   margin: 0 auto var(--space-md);
   display: flex;
   align-items: center;
@@ -160,12 +139,10 @@ onUnmounted(() => {
   border-radius: 50%;
   background: var(--color-primary-soft);
   color: var(--color-primary);
-  box-shadow: 0 0 0 6px rgba(108, 123, 240, 0.06);
 }
 .cd-danger .cd-icon {
-  background: rgba(240, 104, 104, 0.12);
+  background: rgba(196, 122, 106, 0.12);
   color: var(--color-semantic-error);
-  box-shadow: 0 0 0 6px rgba(240, 104, 104, 0.06);
 }
 
 .cd-title {
@@ -174,16 +151,16 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--color-ink);
   margin: 0 0 var(--space-xs);
-  letter-spacing: -0.015em;
+  letter-spacing: -0.01em;
   line-height: 1.3;
 }
 
 .cd-message {
   font-size: var(--text-body);
   color: var(--color-ink-muted);
-  line-height: 1.65;
+  line-height: 1.6;
   margin: 0 auto var(--space-lg);
-  max-width: 360px;
+  max-width: 340px;
 }
 
 .cd-actions {
@@ -192,12 +169,12 @@ onUnmounted(() => {
   justify-content: center;
 }
 .cd-actions .btn {
-  min-width: 96px;
+  min-width: 90px;
 }
 
 .cd-fade-enter-active,
 .cd-fade-leave-active {
-  transition: opacity var(--duration-base) var(--ease-out-cubic);
+  transition: opacity var(--duration-base) var(--ease-out-quad);
 }
 .cd-fade-enter-from,
 .cd-fade-leave-to {
@@ -205,22 +182,20 @@ onUnmounted(() => {
 }
 
 .cd-pop-enter-active {
-  transition:
-    opacity var(--duration-base) var(--ease-out-expo),
-    transform var(--duration-base) var(--ease-out-expo);
+  transition: opacity var(--duration-base) var(--ease-out-expo),
+              transform var(--duration-base) var(--ease-out-expo);
 }
 .cd-pop-leave-active {
-  transition:
-    opacity 160ms var(--ease-out-cubic),
-    transform 160ms var(--ease-out-cubic);
+  transition: opacity 140ms var(--ease-out-quad),
+              transform 140ms var(--ease-out-quad);
 }
 .cd-pop-enter-from {
   opacity: 0;
-  transform: scale(0.94) translateY(8px);
+  transform: scale(0.96) translateY(6px);
 }
 .cd-pop-leave-to {
   opacity: 0;
-  transform: scale(0.97) translateY(2px);
+  transform: scale(0.98) translateY(2px);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -228,7 +203,7 @@ onUnmounted(() => {
   .cd-fade-leave-active,
   .cd-pop-enter-active,
   .cd-pop-leave-active {
-    transition: opacity 120ms linear;
+    transition: opacity 100ms linear;
   }
   .cd-pop-enter-from,
   .cd-pop-leave-to {

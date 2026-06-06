@@ -18,6 +18,12 @@ const project = ref(null)
 const chapters = ref([])
 const loading = ref(true)
 const error = ref('')
+let errorTimer = null
+function showError(msg) {
+  error.value = msg
+  clearTimeout(errorTimer)
+  errorTimer = setTimeout(() => { error.value = '' }, 5000)
+}
 const editorRef = ref(null)
 const scriptRenderRef = ref(null)
 const selectedChapter = ref(null)
@@ -49,7 +55,7 @@ async function analyzeEmotions() {
     const result = await api.analyzeEmotions(projectId)
     emotionData.value = result
   } catch (e) {
-    error.value = '情感分析失败：' + e.message
+    showError('情感分析失败：' + e.message)
   } finally {
     emotionLoading.value = false
   }
@@ -121,7 +127,7 @@ async function load() {
     }
     loading.value = false
   } catch (e) {
-    error.value = e.message
+    showError(e.message)
     loading.value = false
   }
 }
@@ -150,7 +156,7 @@ function onChaptersChanged(newChapters) {
           }
           addChapterToast(`第 ${ch.idx} 章生成完成 ✓`)
           if (el) {
-            gsap.from(el, { scale: 0.96, opacity: 0.6, duration: 0.45, ease: 'back.out(1.7)' })
+            gsap.from(el, { scale: 0.96, opacity: 0.6, duration: 0.45, ease: 'power2.out' })
             el.classList.add('just-done')
             setTimeout(() => el.classList.remove('just-done'), 2000)
           }
@@ -223,15 +229,15 @@ watch(() => project.value?.status, (s, prev) => {
     nextTick(() => {
       const bar = document.querySelector('.progress-block')
       const bench = document.querySelector('.workbench')
-      if (bar) gsap.from(bar, { scale: 1.02, duration: 0.5, ease: 'elastic.out(1, 0.4)' })
-      if (bench) gsap.from(bench, { scale: 0.99, opacity: 0.9, duration: 0.6, ease: 'back.out(1.2)', delay: 0.1 })
+      if (bar) gsap.from(bar, { scale: 1.02, duration: 0.5, ease: 'power2.out' })
+      if (bench) gsap.from(bench, { scale: 0.99, opacity: 0.9, duration: 0.6, ease: 'power2.out', delay: 0.1 })
     })
   }
 })
 
 function animateIn() {
-  gsap.from('.header-row', { y: -8, opacity: 0, duration: 0.5, ease: 'expo.out' })
-  gsap.from('.workbench', { y: 16, opacity: 0, duration: 0.6, ease: 'expo.out', delay: 0.1 })
+  gsap.from('.header-row', { y: -8, opacity: 0, duration: 0.5, ease: 'power2.out' })
+  gsap.from('.workbench', { y: 16, opacity: 0, duration: 0.6, ease: 'power2.out', delay: 0.1 })
 }
 
 async function regenerateChapter(chapterId) {
@@ -250,7 +256,7 @@ async function regenerateChapter(chapterId) {
   } catch (e) {
     regeneratingIds.value.delete(chapterId)
     compareState.value = null
-    error.value = e.message
+    showError(e.message)
   }
 }
 
@@ -274,11 +280,12 @@ async function regenerateAll() {
     startPolling()
   } catch (e) {
     compareState.value = null
-    error.value = e.message
+    showError(e.message)
   }
 }
 
 function selectChapter(ch) {
+  if (compareState.value) compareState.value = null
   selectedChapter.value = selectedChapter.value?.id === ch.id ? null : ch
 }
 
@@ -308,7 +315,7 @@ async function onCompareAcceptOriginal() {
     compareState.value = null
     await load()
   } catch (e) {
-    error.value = e.message
+    showError(e.message)
   }
 }
 
@@ -330,7 +337,7 @@ async function onRewriteDialogue({ sceneId, dialogueIndex, line, character, styl
     )
   } catch (e) {
     scriptRenderRef.value?.onRewriteDone()
-    error.value = 'AI 改稿失败：' + e.message
+    showError('AI 改稿失败：' + e.message)
   }
 }
 
@@ -352,7 +359,7 @@ async function onAcceptRewrite({ sceneId, dialogueIndex, rewrittenLine }) {
     }
     await load()
   } catch (e) {
-    error.value = '保存改稿失败：' + e.message
+    showError('保存改稿失败：' + e.message)
   }
 }
 
@@ -456,24 +463,37 @@ function autoSelectChapter(chs) {
       </div>
 
       <template v-else-if="project">
-        <!-- Header -->
-        <div class="header-row">
-          <div class="meta">
-            <p class="eyebrow">剧本工作台</p>
-            <h1 class="headline">{{ project.title }}</h1>
-            <p class="body-sm subtle">
-              {{ project.sourceNovel || '未填写原著' }} · {{ project.genre || '未填写题材' }}
-              · 共 {{ project.totalChapters }} 章
-            </p>
+        <!-- Unified project toolbar -->
+        <div class="project-toolbar">
+          <div class="pt-left">
+            <RouterLink to="/history" class="pt-back" title="返回列表">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+              </svg>
+            </RouterLink>
+            <div class="pt-info">
+              <h1 class="pt-title">{{ project.title }}</h1>
+              <p class="pt-meta">
+                {{ project.sourceNovel || '未填写原著' }} ·
+                {{ project.genre || '未填写题材' }} ·
+                共 {{ project.totalChapters }} 章
+              </p>
+            </div>
           </div>
-          <div class="meta-actions">
+          <div class="pt-right">
             <StatusBadge :status="project.status" />
-            <button class="btn btn-secondary" @click="copyYaml" :disabled="!project.scriptYaml">
-              <span>复制 YAML</span>
-            </button>
-            <button class="btn btn-primary" @click="downloadYaml" :disabled="!project.scriptYaml">
-              <span>下载 YAML</span>
-            </button>
+            <div class="pt-actions">
+              <button class="pt-btn" @click="copyYaml" :disabled="!project.scriptYaml" title="复制 YAML">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+              <button class="pt-btn pt-btn-primary" @click="downloadYaml" :disabled="!project.scriptYaml" title="下载 YAML">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -486,23 +506,27 @@ function autoSelectChapter(chs) {
           :chapters="displayChaptersForBar"
         />
 
-        <div v-if="error" class="error-bar">⚠ {{ error }}</div>
+        <div v-if="error" class="error-bar">{{ error }}</div>
 
         <!-- Three column workbench -->
         <div class="workbench" :class="{ 'is-comparing': compareState }">
           <!-- Chapter list -->
           <aside v-if="!isFullscreen" class="panel panel-left">
             <header class="panel-head">
-              <h3 class="card-title">章节</h3>
-              <div class="panel-actions">
-                <span class="badge-count">{{ chapters.length }}</span>
-                <button
-                  class="btn btn-tertiary btn-mini"
-                  @click="regenerateAll"
-                  :disabled="project.status === 'GENERATING'"
-                  title="全部重新生成"
-                >↻ 全部</button>
+              <div class="ph-left">
+                <span class="ph-label">章节</span>
+                <span class="ph-count">{{ chapters.length }}</span>
               </div>
+              <button
+                class="ph-action"
+                @click="regenerateAll"
+                :disabled="project.status === 'GENERATING'"
+                title="全部重新生成"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+              </button>
             </header>
             <ol class="chapters">
               <li
@@ -521,7 +545,11 @@ function autoSelectChapter(chs) {
                     @click.stop="regenerateChapter(ch.id)"
                     :disabled="['GENERATING','PENDING'].includes(ch.status)"
                     title="重新生成"
-                  >↻</button>
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="chapter-sub">
                   <span class="badge" :class="statusTone(ch.displayStatus)">
@@ -555,7 +583,12 @@ function autoSelectChapter(chs) {
                   <div class="compare-col-head">
                     <span class="compare-badge new">{{ compareState.chapterLabel }} · 新版本</span>
                     <span v-if="!compareState.newYaml" class="writing-badge"><span class="writing-dot" />生成中</span>
-                    <button v-else class="btn btn-tertiary btn-mini" @click="onCompareCancel">✕ 取消</button>
+                  <button v-else class="btn btn-tertiary btn-mini" @click="onCompareCancel">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                    取消
+                  </button>
                   </div>
                   <div class="compare-col-body">
                     <ScriptRender :yaml="compareState.newYaml" :is-generating="!compareState.newYaml" />
@@ -569,42 +602,56 @@ function autoSelectChapter(chs) {
 
             <!-- Normal single-panel view -->
             <template v-else>
-              <header class="panel-head">
-                <div class="editor-title">
-                  <h3 class="card-title">
-                    {{ selectedChapter ? `第 ${selectedChapter.idx} 章` : '剧本' }}
-                    <span v-if="selectedChapter?.status === 'GENERATING'" class="writing-badge">
-                      <span class="writing-dot" />AI 生成中
-                    </span>
-                  </h3>
+              <header class="panel-head editor-head">
+                <div class="ph-left">
+                  <div class="editor-tabs">
+                    <button
+                      class="etab"
+                      :class="{ active: viewMode === 'script' }"
+                      @click="switchView('script')"
+                    >剧本</button>
+                    <button
+                      class="etab"
+                      :class="{ active: viewMode === 'yaml' }"
+                      @click="switchView('yaml')"
+                    >YAML</button>
+                    <button
+                      class="etab"
+                      :class="{ active: viewMode === 'emotion' }"
+                      @click="switchView('emotion'); if (!emotionData && !emotionLoading) analyzeEmotions()"
+                    >情感曲线</button>
+                  </div>
+                  <span class="ph-context" v-if="selectedChapter">第 {{ selectedChapter.idx }} 章</span>
+                  <span v-if="selectedChapter?.status === 'GENERATING'" class="ph-gen">
+                    <span class="ph-dot" />AI 生成中
+                  </span>
+                </div>
+                <div class="ph-right">
                   <button
                     v-if="selectedChapter"
-                    class="btn btn-tertiary btn-mini"
+                    class="ph-action"
                     @click="viewFullScript"
-                  >查看完整剧本</button>
+                    title="查看完整剧本"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                    </svg>
+                  </button>
+                  <button
+                    class="ph-action"
+                    @click="toggleFullscreen"
+                    :title="isFullscreen ? '退出全屏 (Esc)' : '全屏阅读'"
+                  >
+                    <svg v-if="isFullscreen" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+                      <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+                    </svg>
+                    <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                      <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                    </svg>
+                  </button>
                 </div>
-                <div class="panel-tabs">
-                  <button
-                    class="panel-tab"
-                    :class="{ active: viewMode === 'script' }"
-                    @click="switchView('script')"
-                  >剧本</button>
-                  <button
-                    class="panel-tab"
-                    :class="{ active: viewMode === 'yaml' }"
-                    @click="switchView('yaml')"
-                  >YAML</button>
-                  <button
-                    class="panel-tab"
-                    :class="{ active: viewMode === 'emotion' }"
-                    @click="switchView('emotion'); if (!emotionData && !emotionLoading) analyzeEmotions()"
-                  >情感曲线</button>
-                </div>
-                <button
-                  class="btn btn-tertiary btn-mini btn-fs"
-                  @click="toggleFullscreen"
-                  :title="isFullscreen ? '退出全屏 (Esc)' : '全屏阅读'"
-                >{{ isFullscreen ? '⊠' : '⊡' }}</button>
               </header>
               <ScriptRender
                 v-if="viewMode === 'script'"
@@ -631,8 +678,10 @@ function autoSelectChapter(chs) {
           <!-- Right panel: characters + scenes summary -->
           <aside v-if="!isFullscreen && !compareState" class="panel panel-right">
             <header class="panel-head">
-              <h3 class="card-title">人物</h3>
-              <span class="badge-count">{{ displayCharacters.length }}</span>
+              <div class="ph-left">
+                <span class="ph-label">人物</span>
+                <span class="ph-count">{{ displayCharacters.length }}</span>
+              </div>
             </header>
             <ul class="char-list">
               <li v-for="c in displayCharacters" :key="c.charId" class="char-item">
@@ -646,7 +695,9 @@ function autoSelectChapter(chs) {
                 </span>
               </li>
               <li v-if="!displayCharacters.length" class="char-empty">
-                <span class="char-empty-icon">👤</span>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="char-empty-icon">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
                 <span class="body-sm subtle">{{ selectedChapter ? '该章节暂无人物' : '剧本生成后自动列出人物' }}</span>
               </li>
             </ul>
@@ -695,20 +746,87 @@ function autoSelectChapter(chs) {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.header-row {
+/* Project toolbar */
+.project-toolbar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
   margin-bottom: var(--space-lg);
+  padding: 0 0 var(--space-md) 0;
+  border-bottom: 1px solid var(--color-hairline);
 }
-.meta .eyebrow { margin-bottom: 6px; }
-.meta h1 { margin: 0 0 6px; }
-.meta-actions { display: flex; gap: var(--space-sm); align-items: center; }
+.pt-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+.pt-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px; height: 30px;
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-subtle);
+  flex-shrink: 0;
+  transition: all var(--duration-fast) var(--ease-out-quad);
+}
+.pt-back:hover {
+  background: var(--color-surface-1);
+  color: var(--color-ink);
+}
+.pt-info {
+  min-width: 0;
+}
+.pt-title {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--color-ink);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pt-meta {
+  font-size: var(--text-caption);
+  color: var(--color-ink-subtle);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pt-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+.pt-actions {
+  display: flex;
+  gap: 2px;
+}
+.pt-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-muted);
+  transition: all var(--duration-fast) var(--ease-out-quad);
+}
+.pt-btn:hover { background: var(--color-surface-1); color: var(--color-ink); }
+.pt-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.pt-btn:disabled:hover { background: transparent; color: var(--color-ink-muted); }
+.pt-btn-primary {
+  color: var(--color-primary);
+}
+.pt-btn-primary:hover { background: var(--color-primary-soft); color: var(--color-primary-hover); }
 
 .error-bar {
-  background: rgba(240,104,104,0.06);
-  border: 1px solid rgba(240,104,104,0.2);
+  background: rgba(196, 122, 106,0.06);
+  border: 1px solid rgba(196, 122, 106,0.2);
   color: var(--color-semantic-error);
   padding: 10px 14px;
   border-radius: var(--radius-md);
@@ -741,20 +859,77 @@ function autoSelectChapter(chs) {
 }
 .panel-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: var(--space-md) var(--space-md);
+  padding: 10px var(--space-sm);
   border-bottom: 1px solid var(--color-hairline);
+  min-height: 40px;
 }
-.panel-head h3 { margin: 0; }
-.panel-actions {
-  display: flex; align-items: center; gap: var(--space-sm);
+.ph-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
 }
-.badge-count {
+.ph-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.ph-label {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--color-ink-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.ph-count {
   font-family: var(--font-mono);
   font-size: var(--text-caption);
-  color: var(--color-ink-subtle);
+  color: var(--color-ink-tertiary);
+}
+.ph-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: var(--radius-xs);
+  color: var(--color-ink-tertiary);
+  transition: all var(--duration-fast) var(--ease-out-quad);
+  flex-shrink: 0;
+}
+.ph-action:hover {
   background: var(--color-surface-2);
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
+  color: var(--color-ink-muted);
+}
+.ph-action:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+.ph-action:disabled:hover {
+  background: transparent;
+  color: var(--color-ink-tertiary);
+}
+.ph-context {
+  font-size: var(--text-body-sm);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+}
+.ph-gen {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-caption);
+  color: var(--color-primary);
+}
+.ph-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: ph-pulse 1s ease-in-out infinite;
+}
+@keyframes ph-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50%      { opacity: 1;   transform: scale(1.3); }
 }
 
 .panel-left { padding-bottom: var(--space-md); }
@@ -891,12 +1066,11 @@ function autoSelectChapter(chs) {
   transition: all var(--duration-fast) var(--ease-out-quad);
 }
 .keep-primary {
-  background: var(--gradient-primary);
+  background: var(--color-primary);
   color: var(--color-on-primary);
   border: 0;
-  box-shadow: 0 1px 3px rgba(108,123,240,0.25);
 }
-.keep-primary:hover { box-shadow: 0 2px 8px rgba(108,123,240,0.35); transform: translateY(-1px); }
+.keep-primary:hover { background: var(--color-primary-hover); }
 .keep-ghost {
   background: transparent;
   color: var(--color-ink-muted);
@@ -918,7 +1092,7 @@ function autoSelectChapter(chs) {
   background: var(--color-primary-soft);
   padding: 2px 10px;
   border-radius: var(--radius-pill);
-  border: 1px solid rgba(108,123,240,0.2);
+  border: 1px solid rgba(125,154,110,0.2);
 }
 .writing-dot {
   width: 6px; height: 6px;
@@ -931,26 +1105,28 @@ function autoSelectChapter(chs) {
   50%      { opacity: 1;   transform: scale(1.4); }
 }
 
-/* Panel tabs (剧本 / YAML switch) */
-.panel-tabs {
-  display: flex; gap: 2px;
-  background: var(--color-canvas);
-  border-radius: var(--radius-sm);
-  padding: 2px;
+/* Editor tabs */
+.editor-head {
+  gap: var(--space-sm);
 }
-.panel-tab {
-  padding: 4px 12px;
+.editor-tabs {
+  display: flex;
+  gap: 0;
+}
+.etab {
+  padding: 3px 10px;
   font-size: var(--text-caption);
   font-weight: 500;
   color: var(--color-ink-subtle);
-  border-radius: var(--radius-xs);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   transition: all var(--duration-fast) var(--ease-out-quad);
 }
-.panel-tab.active {
-  background: var(--color-surface-2);
+.etab.active {
   color: var(--color-ink);
+  border-bottom-color: var(--color-primary);
 }
-.panel-tab:hover:not(.active) { color: var(--color-ink-muted); }
+.etab:hover:not(.active) { color: var(--color-ink-muted); }
 
 .panel-right { padding-bottom: var(--space-md); }
 .char-list { list-style: none; padding: 0 var(--space-md); margin: 0; }
@@ -973,13 +1149,13 @@ function autoSelectChapter(chs) {
   transition: all var(--duration-fast) var(--ease-out-quad);
 }
 .char-avatar.protagonist {
-  background: rgba(61,214,140,0.1);
-  border-color: rgba(61,214,140,0.3);
+  background: rgba(107, 160, 123,0.1);
+  border-color: rgba(107, 160, 123,0.3);
   color: var(--color-semantic-success);
 }
 .char-avatar.antagonist {
-  background: rgba(240,104,104,0.1);
-  border-color: rgba(240,104,104,0.3);
+  background: rgba(196, 122, 106,0.1);
+  border-color: rgba(196, 122, 106,0.3);
   color: var(--color-semantic-error);
 }
 .char-info { display: flex; flex-direction: column; min-width: 0; }
@@ -992,13 +1168,13 @@ function autoSelectChapter(chs) {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   padding: var(--space-lg) 0;
 }
-.char-empty-icon { font-size: 28px; opacity: 0.4; }
+.char-empty-icon { width: 28px; height: 28px; opacity: 0.3; }
 
 .project-error {
   margin: var(--space-md);
   padding: var(--space-md);
-  background: rgba(240,180,41,0.06);
-  border: 1px solid rgba(240,180,41,0.2);
+  background: rgba(201, 160, 67,0.06);
+  border: 1px solid rgba(201, 160, 67,0.2);
   border-radius: var(--radius-md);
 }
 .error-text { color: var(--color-semantic-warning); margin: 0 0 4px; }
@@ -1008,9 +1184,9 @@ function autoSelectChapter(chs) {
   animation: done-flash 1.8s var(--ease-out-cubic) forwards;
 }
 @keyframes done-flash {
-  0%   { box-shadow: inset 0 0 0 0 rgba(61,214,140,0.3); background: rgba(61,214,140,0.05); }
-  25%  { box-shadow: inset 0 0 24px 6px rgba(61,214,140,0.12); background: rgba(61,214,140,0.1); }
-  100% { box-shadow: inset 0 0 0 0 rgba(61,214,140,0); background: transparent; }
+  0%   { box-shadow: inset 0 0 0 0 rgba(107, 160, 123,0.3); background: rgba(107, 160, 123,0.05); }
+  25%  { box-shadow: inset 0 0 24px 6px rgba(107, 160, 123,0.12); background: rgba(107, 160, 123,0.1); }
+  100% { box-shadow: inset 0 0 0 0 rgba(107, 160, 123,0); background: transparent; }
 }
 
 /* Generating chapter left-edge pulse */
@@ -1018,8 +1194,8 @@ function autoSelectChapter(chs) {
   animation: gen-pulse 2s ease-in-out infinite;
 }
 @keyframes gen-pulse {
-  0%, 100% { box-shadow: inset 3px 0 0 0 rgba(108,123,240,0.25); }
-  50%      { box-shadow: inset 3px 0 0 0 rgba(108,123,240,0.55); }
+  0%, 100% { box-shadow: inset 3px 0 0 0 rgba(125,154,110,0.25); }
+  50%      { box-shadow: inset 3px 0 0 0 rgba(125,154,110,0.55); }
 }
 
 /* Chapter toast stack */

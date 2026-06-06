@@ -1,61 +1,60 @@
 :root {
-  /* ====== Color tokens ====== */
-  --color-primary: #6c7bf0;
-  --color-primary-hover: #8b97f7;
-  --color-primary-focus: #5a68d9;
+  /* ====== Color tokens (fresh natural, light theme) ====== */
+  --color-primary: #7d9a6e;
+  --color-primary-hover: #8eab7e;
+  --color-primary-focus: #6c8a5d;
   --color-on-primary: #ffffff;
 
-  --color-primary-soft: rgba(108, 123, 240, 0.12);
-  --color-primary-glow: rgba(108, 123, 240, 0.25);
+  --color-primary-soft: rgba(125, 154, 110, 0.1);
+  --color-primary-glow: rgba(125, 154, 110, 0.12);
 
-  --color-canvas: #08090c;
-  --color-surface-1: #111318;
-  --color-surface-2: #171a21;
-  --color-surface-3: #1c2029;
-  --color-surface-4: #21252e;
+  --color-canvas: #f5f2ec;
+  --color-surface-1: #ffffff;
+  --color-surface-2: #faf8f4;
+  --color-surface-3: #f2efe8;
+  --color-surface-4: #eae6de;
 
-  --color-hairline: #1e222b;
-  --color-hairline-strong: #2a2f3a;
-  --color-hairline-tertiary: #363c4a;
+  --color-hairline: #e4dfd8;
+  --color-hairline-strong: #d4cec5;
+  --color-hairline-tertiary: #c4bdb2;
 
-  --color-ink: #eef0f6;
-  --color-ink-muted: #b8bdd0;
-  --color-ink-subtle: #7c8299;
-  --color-ink-tertiary: #555b6e;
+  --color-ink: #2c2825;
+  --color-ink-muted: #6b635c;
+  --color-ink-subtle: #948b82;
+  --color-ink-tertiary: #b5aca1;
 
-  --color-semantic-success: #3dd68c;
-  --color-semantic-warning: #f0b429;
-  --color-semantic-error: #f06868;
-  --color-semantic-running: #6c7bf0;
+  --color-semantic-success: #6ba07b;
+  --color-semantic-warning: #c9a043;
+  --color-semantic-error: #c47a6a;
+  --color-semantic-running: #7d9a6e;
 
-  /* ====== Gradients ====== */
-  --gradient-hero: linear-gradient(135deg, rgba(108,123,240,0.08) 0%, rgba(168,85,247,0.06) 50%, rgba(61,214,140,0.04) 100%);
-  --gradient-primary: linear-gradient(135deg, #6c7bf0 0%, #a78bfa 50%, #818cf8 100%);
-  --gradient-card-border: linear-gradient(135deg, rgba(108,123,240,0.2) 0%, rgba(168,85,247,0.15) 50%, rgba(108,123,240,0.05) 100%);
-  --gradient-feature-1: linear-gradient(135deg, rgba(108,123,240,0.15) 0%, rgba(108,123,240,0.02) 100%);
-  --gradient-feature-2: linear-gradient(135deg, rgba(168,85,247,0.15) 0%, rgba(168,85,247,0.02) 100%);
-  --gradient-feature-3: linear-gradient(135deg, rgba(61,214,140,0.15) 0%, rgba(61,214,140,0.02) 100%);
+  /* ====== Gradients (extremely minimal) ====== */
+  --gradient-primary: linear-gradient(135deg, #7d9a6e 0%, #8eab7e 100%);
+  --gradient-hero: none;
+  --gradient-card-border: none;
+  --gradient-feature-1: none;
+  --gradient-feature-2: none;
+  --gradient-feature-3: none;
 
   /* ====== Typography ====== */
-  --font-display: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'SF Pro Display',
-                  'Segoe UI', system-ui, Roboto, sans-serif;
-  --font-text:    'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+  --font-display: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', Georgia, serif;
+  --font-text:    'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'SF Pro Text',
                   'Segoe UI', system-ui, Roboto, sans-serif;
   --font-mono:    'JetBrains Mono', 'SF Mono', 'Menlo', ui-monospace, monospace;
 
-  --text-display-xl: 80px;
-  --text-display-lg: 52px;
-  --text-display-md: 40px;
-  --text-headline: 28px;
-  --text-card-title: 20px;
-  --text-subhead: 18px;
-  --text-body-lg: 17px;
-  --text-body: 15px;
+  --text-display-xl: 56px;
+  --text-display-lg: 40px;
+  --text-display-md: 32px;
+  --text-headline: 22px;
+  --text-card-title: 17px;
+  --text-subhead: 16px;
+  --text-body-lg: 15px;
+  --text-body: 14px;
   --text-body-sm: 13px;
-  --text-caption: 12px;
+  --text-caption: 11px;
   --text-button: 13px;
-  --text-eyebrow: 12px;
-  --text-mono: 13px;
+  --text-eyebrow: 11px;
+  --text-mono: 12px;
 
   /* ====== Spacing ====== */
   --space-xxs: 4px;
@@ -65,15 +64,15 @@
   --space-lg:  24px;
   --space-xl:  32px;
   --space-xxl: 48px;
-  --space-section: 96px;
+  --space-section: 80px;
 
-  /* ====== Radii ====== */
+  /* ====== Radii (slightly softer) ====== */
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
-  --radius-xxl: 24px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-xxl: 20px;
   --radius-pill: 9999px;
 
   /* ====== Motion ====== */
@@ -82,12 +81,12 @@
   --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
   --ease-in-out-cubic: cubic-bezier(0.645, 0.045, 0.355, 1);
 
-  --duration-fast: 150ms;
-  --duration-base: 240ms;
-  --duration-slow: 420ms;
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 350ms;
 
-  /* ====== Shadows ====== */
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.15);
-  --shadow-card-hover: 0 2px 6px rgba(0,0,0,0.35), 0 12px 32px rgba(0,0,0,0.2);
-  --shadow-glow: 0 0 20px rgba(108,123,240,0.15), 0 0 60px rgba(108,123,240,0.05);
+  /* ====== Shadows (soft, diffused) ====== */
+  --shadow-card: 0 1px 3px rgba(44, 40, 37, 0.06), 0 4px 12px rgba(44, 40, 37, 0.04);
+  --shadow-card-hover: 0 2px 6px rgba(44, 40, 37, 0.08), 0 8px 24px rgba(44, 40, 37, 0.06);
+  --shadow-glow: 0 0 16px rgba(125, 154, 110, 0.1);
 }

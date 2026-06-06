@@ -178,7 +178,7 @@ function showRewriteResult(sceneId, dialogueIdx, originalLine, rewrittenLine) {
     if (arrow) {
       gsap.fromTo(arrow,
         { opacity: 0, y: -6 },
-        { opacity: 1, y: 0, duration: 0.35, delay: 0.15, ease: 'back.out(2)' }
+        { opacity: 1, y: 0, duration: 0.35, delay: 0.15, ease: 'power2.out' }
       )
     }
     diffEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -328,7 +328,11 @@ function animateIn() {
 
     <!-- Empty: no content, not generating -->
     <div v-else-if="!script" class="script-empty">
-      <span class="empty-icon">📜</span>
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+      </svg>
       <p class="body-sm subtle">剧本生成后将在此展示</p>
     </div>
 
@@ -359,7 +363,7 @@ function animateIn() {
             <span class="char-chip-avatar">{{ (c.name || '?').slice(0, 1) }}</span>
             <span class="char-chip-name">{{ c.name }}</span>
             <span v-if="c.role" class="char-chip-role">{{ c.role }}</span>
-            <span class="char-chip-lines" v-if="scriptStats">{{ scriptStats.totalDialogues ? '💬' : '' }}</span>
+            <span class="char-chip-lines" v-if="scriptStats && scriptStats.totalDialogues">💬</span>
           </div>
         </div>
       </div>
@@ -418,7 +422,7 @@ function animateIn() {
                 <div class="dialogue-character">
                   {{ charName(d.character) }}
                   <span v-if="d.parenthetical" class="dialogue-parenthetical">（{{ d.parenthetical }}）</span>
-                  <span v-if="d.emotion" class="dialogue-emotion"> — {{ d.emotion }}</span>
+                  <span v-if="d.emotion" class="dialogue-emotion"> · {{ d.emotion }}</span>
                 </div>
                 <p class="dialogue-line">{{ d.line }}</p>
               </div>
@@ -516,8 +520,8 @@ function animateIn() {
 /* ── Empty / Error ── */
 .parse-error {
   padding: var(--space-lg);
-  background: rgba(240,104,104,0.06);
-  border: 1px solid rgba(240,104,104,0.2);
+  background: rgba(196, 122, 106,0.06);
+  border: 1px solid rgba(196, 122, 106,0.2);
   border-radius: var(--radius-md);
 }
 .error-text { color: var(--color-semantic-error); margin: 0 0 8px; }
@@ -620,7 +624,7 @@ function animateIn() {
 }
 .char-chip-avatar {
   width: 22px; height: 22px; border-radius: 50%;
-  background: var(--gradient-primary);
+  background: var(--color-primary);
   color: var(--color-on-primary);
   display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 600;
@@ -642,7 +646,7 @@ function animateIn() {
 .char-chip.is-active {
   background: var(--color-primary-soft);
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(108,123,240,0.2);
+  box-shadow: 0 0 0 2px rgba(125,154,110,0.2);
 }
 .char-chip.is-dimmed { opacity: 0.35; }
 .char-chip-lines { font-size: 11px; margin-left: 2px; }
@@ -715,7 +719,7 @@ function animateIn() {
   transition: all 0.3s var(--ease-out-cubic);
 }
 .dialogue-block.is-highlighted {
-  background: rgba(108,123,240,0.06);
+  background: rgba(125,154,110,0.06);
   box-shadow: inset 3px 0 0 0 var(--color-primary);
 }
 .dialogue-block.is-dimmed { opacity: 0.25; }
@@ -724,18 +728,18 @@ function animateIn() {
   transition: all 0.2s var(--ease-out-quad);
 }
 .dialogue-block:hover {
-  background: rgba(108,123,240,0.03);
+  background: rgba(125,154,110,0.03);
 }
 .dialogue-block.is-selected {
-  background: rgba(108,123,240,0.08);
-  box-shadow: inset 3px 0 0 0 var(--color-primary), 0 0 0 1px rgba(108,123,240,0.15);
+  background: rgba(125,154,110,0.08);
+  box-shadow: inset 3px 0 0 0 var(--color-primary), 0 0 0 1px rgba(125,154,110,0.15);
   border-radius: var(--radius-sm);
 }
 .voiceover-block {
   transition: all 0.3s var(--ease-out-cubic);
 }
 .voiceover-block.is-highlighted {
-  background: rgba(108,123,240,0.08);
+  background: rgba(125,154,110,0.08);
   border-left-color: var(--color-primary);
 }
 .voiceover-block.is-dimmed { opacity: 0.25; }
@@ -843,8 +847,8 @@ function animateIn() {
 .rewrite-diff {
   margin: var(--space-sm) var(--space-md);
   padding: var(--space-md);
-  background: rgba(108,123,240,0.04);
-  border: 1px solid rgba(108,123,240,0.2);
+  background: rgba(125,154,110,0.04);
+  border: 1px solid rgba(125,154,110,0.2);
   border-radius: var(--radius-md);
   border-left: 3px solid var(--color-primary);
 }

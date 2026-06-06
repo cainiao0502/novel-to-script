@@ -22,17 +22,14 @@ onMounted(async () => {
     loading.value = false
   }
   await nextTick()
-  animateCards()
+  animateRows()
 })
 
-function animateCards() {
-  const cards = document.querySelectorAll('.history-card')
-  if (!cards.length) return
-  gsap.from(cards, {
-    y: 16,
-    duration: 0.45,
-    stagger: 0.06,
-    ease: 'expo.out'
+function animateRows() {
+  const rows = document.querySelectorAll('.history-row')
+  if (!rows.length) return
+  gsap.from(rows, {
+    y: 10, opacity: 0, duration: 0.35, stagger: 0.04, ease: 'power2.out'
   })
 }
 
@@ -58,7 +55,7 @@ function statusLabel(s) {
 async function deleteProject(e, id, title) {
   e.stopPropagation()
   const ok = await showConfirm({
-    title: `删除项目「${title}」？`,
+    title: `删除「${title}」？`,
     message: '项目及其所有章节、生成的剧本将永久消失，无法恢复。',
     confirmText: '永久删除',
     cancelText: '取消',
@@ -76,57 +73,76 @@ async function deleteProject(e, id, title) {
 
 <template>
   <section class="history">
-    <div class="container">
-      <header class="history-header">
-        <p class="eyebrow">项目历史</p>
-        <h1 class="headline">历史记录</h1>
-        <p class="body-sm subtle">所有已创建的项目，点击进入工作台</p>
+    <div class="history-container">
+      <header class="history-bar">
+        <div>
+          <h1 class="history-title">历史记录</h1>
+          <p class="history-count" v-if="projects.length">共 {{ projects.length }} 个项目</p>
+        </div>
+        <RouterLink to="/" class="bar-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          新建项目
+        </RouterLink>
       </header>
 
-      <div v-if="loading" class="loading">
-        <div class="spinner-lg" />
-        <span class="subtle">加载中…</span>
+      <!-- Loading -->
+      <div v-if="loading" class="state-line">
+        <div class="spinner" />
+        <span>加载中</span>
       </div>
 
-      <div v-else-if="error" class="error-bar">
-        <span>{{ error }}</span>
+      <!-- Error -->
+      <div v-else-if="error" class="error-line">{{ error }}</div>
+
+      <!-- Empty -->
+      <div v-else-if="projects.length === 0" class="state-line">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" class="state-icon">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        <span>暂无项目</span>
+        <RouterLink to="/" class="bar-btn">创建第一个项目</RouterLink>
       </div>
 
-      <div v-else-if="projects.length === 0" class="empty-state">
-        <span class="empty-icon">📂</span>
-        <p class="body-lg">暂无项目</p>
-        <p class="body-sm subtle">创建你的第一个项目开始体验</p>
-        <RouterLink to="/" class="btn btn-primary" style="margin-top: var(--space-md);">
-          创建项目
-        </RouterLink>
-      </div>
-
-      <div v-else class="history-grid">
+      <!-- Table -->
+      <div v-else class="history-table">
+        <div class="table-head">
+          <span class="th-name">项目</span>
+          <span class="th-meta">章节</span>
+          <span class="th-meta">状态</span>
+          <span class="th-date">更新时间</span>
+          <span class="th-action"></span>
+        </div>
         <div
           v-for="p in projects"
           :key="p.id"
-          class="history-card"
+          class="history-row"
           @click="openProject(p.id)"
         >
-          <div class="card-header">
-            <h3 class="card-title">{{ p.title }}</h3>
-            <div class="card-actions">
-              <StatusBadge :status="p.status" />
-              <button
-                class="btn-delete"
-                @click="deleteProject($event, p.id, p.title)"
-                title="删除项目"
-              >✕</button>
-            </div>
+          <div class="td-name">
+            <span class="td-title">{{ p.title }}</span>
+            <span class="td-sub" v-if="p.sourceNovel || p.genre">{{ p.sourceNovel || p.genre }}</span>
           </div>
-          <div class="card-meta">
-            <span v-if="p.genre">{{ p.genre }}</span>
-            <span v-if="p.totalChapters">共 {{ p.totalChapters }} 章</span>
-            <span v-if="p.sourceNovel">{{ p.sourceNovel }}</span>
+          <div class="td-meta">
+            <span class="td-chapter">{{ p.totalChapters || '-' }}</span>
           </div>
-          <div class="card-footer">
-            <span class="caption subtle">{{ formatDate(p.updatedAt) }}</span>
-            <span class="arrow">→</span>
+          <div class="td-meta">
+            <StatusBadge :status="p.status" />
+          </div>
+          <div class="td-date">{{ formatDate(p.updatedAt) }}</div>
+          <div class="td-action" @click.stop>
+            <button
+              class="td-del"
+              @click="deleteProject($event, p.id, p.title)"
+              title="删除项目"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+            </button>
           </div>
         </div>
       </div>
@@ -136,158 +152,182 @@ async function deleteProject(e, id, title) {
 
 <style scoped>
 .history {
-  padding: var(--space-xl) 0 var(--space-section);
-  min-height: calc(100vh - 56px);
+  min-height: calc(100vh - 52px);
 }
-.history-header {
-  max-width: 800px;
-  margin: 0 auto var(--space-xl);
+.history-container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-lg) var(--space-section);
 }
-.history-header .eyebrow { margin-bottom: 6px; }
-.history-header h1 { margin: 0 0 6px; }
 
-/* Loading */
-.loading {
+/* Header bar */
+.history-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+.history-title {
+  font-family: var(--font-display);
+  font-size: var(--text-headline);
+  font-weight: 600;
+  color: var(--color-ink);
+  margin: 0 0 2px;
+}
+.history-count {
+  font-size: var(--text-body-sm);
+  color: var(--color-ink-subtle);
+  margin: 0;
+}
+
+.bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  height: 34px;
+  padding: 0 14px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-button);
+  font-weight: 500;
+  transition: background var(--duration-fast) var(--ease-out-quad);
+  text-decoration: none;
+}
+.bar-btn:hover { background: var(--color-primary-hover); }
+
+/* States */
+.state-line {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-xxl) 0;
+  color: var(--color-ink-subtle);
+  font-size: var(--text-body-sm);
 }
-.spinner-lg {
-  width: 32px; height: 32px;
-  border: 3px solid var(--color-hairline-strong);
-  border-right-color: var(--color-primary);
+.state-icon { opacity: 0.25; }
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--color-hairline-strong);
+  border-top-color: var(--color-primary);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Error */
-.error-bar {
-  background: rgba(240,104,104,0.06);
-  border: 1px solid rgba(240,104,104,0.2);
+.error-line {
+  padding: 9px 12px;
+  background: rgba(196, 122, 106, 0.06);
+  border: 1px solid rgba(196, 122, 106, 0.2);
   color: var(--color-semantic-error);
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   font-size: var(--text-body-sm);
 }
 
-/* Empty state */
-.empty-state {
+/* Table */
+.history-table {
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.table-head {
+  display: grid;
+  grid-template-columns: 1fr 60px 90px 150px 40px;
+  gap: var(--space-sm);
+  padding: 10px var(--space-md);
+  background: var(--color-surface-1);
+  border-bottom: 1px solid var(--color-hairline);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--color-ink-tertiary);
+  letter-spacing: 0.05em;
+}
+.th-name { text-align: left; }
+.th-meta { text-align: center; }
+.th-date { text-align: right; }
+.th-action { text-align: center; }
+
+.history-row {
+  display: grid;
+  grid-template-columns: 1fr 60px 90px 150px 40px;
+  gap: var(--space-sm);
+  padding: 14px var(--space-md);
+  background: transparent;
+  border-bottom: 1px solid var(--color-hairline);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quad);
+  align-items: center;
+}
+.history-row:last-child { border-bottom: 0; }
+.history-row:hover { background: var(--color-surface-1); }
+
+.td-name {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: var(--space-xxl) 0;
+  gap: 2px;
+  min-width: 0;
 }
-.empty-icon {
-  font-size: 48px;
-  margin-bottom: var(--space-md);
-  opacity: 0.6;
-}
-.empty-state p { margin: 0 0 4px; }
-
-/* Grid */
-.history-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: var(--space-md);
-  max-width: 1000px;
-  margin: 0 auto;
-}
-
-/* Card */
-.history-card {
-  position: relative;
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-lg);
-  padding: var(--space-lg);
-  cursor: pointer;
-  transition: all var(--duration-base) var(--ease-out-cubic);
-}
-.history-card:hover {
-  border-color: var(--color-hairline-strong);
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-card-hover);
-}
-.history-card::before {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; top: 0; height: 2px;
-  background: linear-gradient(90deg, var(--color-primary) 0%, #a78bfa 50%, transparent 100%);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  opacity: 0;
-  transition: opacity var(--duration-base) var(--ease-out-cubic);
-}
-.history-card:hover::before { opacity: 1; }
-
-.card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md);
-}
-.card-header .card-title {
-  margin: 0;
+.td-title {
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--color-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-body-lg);
-  color: var(--color-ink);
 }
-.card-actions {
-  display: flex; align-items: center; gap: var(--space-sm); flex-shrink: 0;
-}
-.btn-delete {
-  background: none; border: none; cursor: pointer;
-  color: var(--color-ink-subtle);
-  font-size: 14px; width: 24px; height: 24px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-sm);
-  opacity: 0; transition: all var(--duration-fast) var(--ease-out-quad);
-}
-.btn-delete:hover {
-  color: var(--color-semantic-error);
-  background: rgba(240,104,104,0.1);
-}
-.history-card:hover .btn-delete { opacity: 1; }
-
-.card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md);
-}
-.card-meta span {
-  background: var(--color-surface-2);
-  padding: 2px 10px;
-  border-radius: var(--radius-sm);
+.td-sub {
   font-size: var(--text-caption);
   color: var(--color-ink-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-.card-footer {
+.td-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding-top: var(--space-sm);
-  border-top: 1px solid var(--color-hairline);
+  justify-content: center;
 }
-.card-footer .arrow {
-  color: var(--color-primary);
-  font-size: var(--text-body-lg);
-  transition: transform var(--duration-fast) var(--ease-out-quad);
+.td-chapter {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  color: var(--color-ink-muted);
 }
-.history-card:hover .arrow {
-  transform: translateX(3px);
+.td-date {
+  font-size: var(--text-body-sm);
+  color: var(--color-ink-subtle);
+  text-align: right;
+}
+.td-action {
+  display: flex;
+  justify-content: center;
+}
+.td-del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: var(--radius-xs);
+  color: var(--color-ink-tertiary);
+  opacity: 0;
+  transition: all var(--duration-fast) var(--ease-out-quad);
+}
+.history-row:hover .td-del { opacity: 1; }
+.td-del:hover {
+  color: var(--color-semantic-error);
+  background: rgba(196, 122, 106, 0.1);
 }
 
-@media (max-width: 600px) {
-  .history-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 700px) {
+  .table-head { display: none; }
+  .history-row {
+    grid-template-columns: 1fr auto;
+    gap: var(--space-xs);
+    padding: var(--space-md);
   }
+  .td-meta { display: none; }
+  .td-date { display: none; }
+  .td-action { display: flex; align-items: center; }
+  .td-del { opacity: 1; }
 }
 </style>

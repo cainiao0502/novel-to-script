@@ -44,7 +44,7 @@ function applyProgress(p) {
   tween = gsap.to(displayWidth, {
     value: Math.max(0, Math.min(100, p)),
     duration: 0.8,
-    ease: 'expo.out'
+    ease: 'power2.out'
   })
 }
 
@@ -76,7 +76,7 @@ onMounted(() => {
     gsap.from(dots, {
       scale: 0, opacity: 0,
       duration: 0.4, stagger: 0.05,
-      ease: 'back.out(2)',
+      ease: 'power2.out',
       delay: 0.15
     })
   })
@@ -89,7 +89,7 @@ watch(() => props.status, (s, prev) => {
     applyProgress(100)
     nextTick(() => {
       if (barRef.value) {
-        gsap.from(barRef.value, { scale: 1.03, duration: 0.5, ease: 'elastic.out(1, 0.4)' })
+        gsap.from(barRef.value, { scale: 1.03, duration: 0.5, ease: 'power2.out' })
       }
     })
   }
@@ -106,7 +106,7 @@ watch(() => props.chapters, (chs) => {
       if (!dot) return
 
       if (ch.status === 'DONE') {
-        gsap.from(dot, { scale: 0, duration: 0.45, ease: 'back.out(2.5)' })
+        gsap.from(dot, { scale: 0, duration: 0.45, ease: 'power2.out' })
         const glow = dot.querySelector('.dot-glow')
         if (glow) {
           gsap.fromTo(glow,
@@ -118,7 +118,7 @@ watch(() => props.chapters, (chs) => {
       } else if (ch.status === 'GENERATING') {
         gsap.from(dot, { scale: 1.4, duration: 0.35, ease: 'power2.out' })
       } else if (ch.status === 'FAILED') {
-        gsap.from(dot, { scale: 0, duration: 0.4, ease: 'back.out(2)' })
+        gsap.from(dot, { scale: 0, duration: 0.4, ease: 'power2.out' })
         gsap.to(dot, { x: -3, duration: 0.06, repeat: 3, yoyo: true })
       }
 
@@ -216,7 +216,7 @@ const statusLabel = (s) => ({
   mix-blend-mode: overlay;
 }
 .bar.is-complete .fill {
-  box-shadow: 0 0 14px rgba(61,214,140,0.35);
+  box-shadow: 0 0 14px rgba(107, 160, 123,0.35);
 }
 
 /* ── Flowing stream bands ── */
@@ -328,41 +328,41 @@ const statusLabel = (s) => ({
 .ch-dot.dot-generating .dot-inner {
   background: var(--color-primary-soft);
   color: var(--color-primary);
-  border: 1.5px solid rgba(108,123,240,0.35);
-  box-shadow: 0 0 0 4px rgba(108,123,240,0.1);
+  border: 1.5px solid rgba(125,154,110,0.35);
+  box-shadow: 0 0 0 4px rgba(125,154,110,0.1);
 }
 .ch-dot.dot-generating .dot-ring {
   animation: pulse-ring 1.5s ease-out infinite;
-  border: 1.5px solid rgba(108,123,240,0.3);
+  border: 1.5px solid rgba(125,154,110,0.3);
 }
 .ch-dot.dot-generating .dot-label { color: var(--color-primary); }
 
 .ch-dot.dot-done .dot-inner {
-  background: rgba(61,214,140,0.15);
+  background: rgba(107, 160, 123,0.15);
   color: var(--color-semantic-success);
-  border: 1.5px solid rgba(61,214,140,0.4);
+  border: 1.5px solid rgba(107, 160, 123,0.4);
 }
 .ch-dot.dot-done .dot-check { font-size: 13px; line-height: 1; }
 .ch-dot.dot-done .dot-glow {
-  background: radial-gradient(circle, rgba(61,214,140,0.25) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(107, 160, 123,0.25) 0%, transparent 70%);
 }
 .ch-dot.dot-done .dot-label { color: var(--color-semantic-success); }
 
 .ch-dot.dot-failed .dot-inner {
-  background: rgba(240,104,104,0.12);
+  background: rgba(196, 122, 106,0.12);
   color: var(--color-semantic-error);
-  border: 1.5px solid rgba(240,104,104,0.35);
+  border: 1.5px solid rgba(196, 122, 106,0.35);
 }
 .ch-dot.dot-failed .dot-x { font-size: 12px; line-height: 1; font-weight: 700; }
 .ch-dot.dot-failed .dot-label { color: var(--color-semantic-error); }
 
 .ch-dot.dot-queued .dot-inner {
-  background: rgba(61,214,140,0.06);
-  color: rgba(61,214,140,0.5);
-  border: 1.5px solid rgba(61,214,140,0.2);
+  background: rgba(107, 160, 123,0.06);
+  color: rgba(107, 160, 123,0.5);
+  border: 1.5px solid rgba(107, 160, 123,0.2);
 }
 .ch-dot.dot-queued .dot-check { font-size: 13px; line-height: 1; opacity: 0.5; }
-.ch-dot.dot-queued .dot-label { color: rgba(61,214,140,0.45); }
+.ch-dot.dot-queued .dot-label { color: rgba(107, 160, 123,0.45); }
 
 @keyframes pulse-ring {
   0%   { transform: translate(-50%, -50%) scale(1);   opacity: 1; }

@@ -1,5 +1,6 @@
 package com.nailinai.noveltoscriptbackend.api;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.nailinai.noveltoscriptbackend.domain.entity.ChapterEntity;
 import com.nailinai.noveltoscriptbackend.domain.entity.ChapterStatus;
 import com.nailinai.noveltoscriptbackend.domain.entity.ProjectEntity;
@@ -42,6 +43,7 @@ public class GenerationController {
 
         ProjectEntity p = store.findProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p);
 
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             if (!store.takeIdempotency(idempotencyKey)) {
@@ -71,6 +73,7 @@ public class GenerationController {
 
         ProjectEntity p = store.findProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p);
         if ("GENERATING".equals(p.getStatus())) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("status", "ALREADY_RUNNING", "message", "generation in progress"));
@@ -99,8 +102,9 @@ public class GenerationController {
             @PathVariable long id,
             @RequestBody Map<String, String> body) {
 
-        store.findProject(id)
+        ProjectEntity p = store.findProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p);
 
         String style = body.get("style");
         String currentLine = body.get("currentLine");
@@ -119,5 +123,12 @@ public class GenerationController {
                 "originalLine", currentLine,
                 "rewrittenLine", rewritten
         ));
+    }
+
+    private void checkOwnership(ProjectEntity p) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        if (p.getUserId() != null && !p.getUserId().equals(userId)) {
+            throw new ResourceNotFoundException("Project not found: " + p.getId());
+        }
     }
 }

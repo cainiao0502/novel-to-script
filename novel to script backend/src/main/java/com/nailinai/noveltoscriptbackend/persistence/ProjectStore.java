@@ -55,8 +55,20 @@ public class ProjectStore {
                         .orderByDesc("updated_at"));
     }
 
+    public List<ProjectEntity> listProjectsByUser(Long userId) {
+        return projectMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ProjectEntity>()
+                        .eq("user_id", userId)
+                        .orderByDesc("updated_at"));
+    }
+
     public ProjectEntity createProject(String title, String sourceNovel, String genre, int totalChapters) {
+        return createProject(title, sourceNovel, genre, totalChapters, null);
+    }
+
+    public ProjectEntity createProject(String title, String sourceNovel, String genre, int totalChapters, Long userId) {
         ProjectEntity p = new ProjectEntity();
+        p.setUserId(userId);
         p.setTitle(title);
         p.setSourceNovel(sourceNovel);
         p.setGenre(genre);

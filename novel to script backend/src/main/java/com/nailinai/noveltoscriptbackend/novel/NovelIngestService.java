@@ -28,6 +28,10 @@ public class NovelIngestService {
     }
 
     public IngestResult ingestText(String title, String sourceNovel, String genre, String rawText) {
+        return ingestText(title, sourceNovel, genre, rawText, null);
+    }
+
+    public IngestResult ingestText(String title, String sourceNovel, String genre, String rawText, Long userId) {
         if (rawText == null || rawText.isBlank()) {
             throw new IllegalArgumentException("Novel text is empty");
         }
@@ -36,7 +40,7 @@ public class NovelIngestService {
             throw new IllegalArgumentException(
                     "At least 3 chapters required, detected " + chapters.size());
         }
-        ProjectEntity project = store.createProject(title, sourceNovel, genre, chapters.size());
+        ProjectEntity project = store.createProject(title, sourceNovel, genre, chapters.size(), userId);
         for (ChapterSplitter.Chapter c : chapters) {
             store.createChapter(project.getId(), c.index(), c.title(), c.content());
         }
@@ -50,6 +54,10 @@ public class NovelIngestService {
     );
 
     public IngestResult ingestFile(String title, String sourceNovel, String genre, MultipartFile file) {
+        return ingestFile(title, sourceNovel, genre, file, null);
+    }
+
+    public IngestResult ingestFile(String title, String sourceNovel, String genre, MultipartFile file, Long userId) {
         String text;
         String filename = file.getOriginalFilename();
         String ext = filename != null ? getExtension(filename) : "";
@@ -67,7 +75,7 @@ public class NovelIngestService {
                 throw new IllegalArgumentException("Failed to read file: " + e.getMessage(), e);
             }
         }
-        return ingestText(title, sourceNovel, genre, text);
+        return ingestText(title, sourceNovel, genre, text, userId);
     }
 
     private static String getExtension(String filename) {

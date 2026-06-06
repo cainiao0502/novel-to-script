@@ -1,5 +1,6 @@
 package com.nailinai.noveltoscriptbackend.api;
 
+import cn.dev33.satoken.exception.NotLoginException;
 import com.nailinai.noveltoscriptbackend.api.dto.ErrorResponse;
 import com.nailinai.noveltoscriptbackend.llm.LlmException;
 import com.nailinai.noveltoscriptbackend.script.ScriptException;
@@ -56,6 +57,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> script(ScriptException e) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(ErrorResponse.of(422, "SCRIPT_VALIDATION", e.getMessage()));
+    }
+
+    @ExceptionHandler(NotLoginException.class)
+    public ResponseEntity<ErrorResponse> notLogin(NotLoginException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of(401, "UNAUTHORIZED", "请先登录"));
     }
 
     @ExceptionHandler(Exception.class)

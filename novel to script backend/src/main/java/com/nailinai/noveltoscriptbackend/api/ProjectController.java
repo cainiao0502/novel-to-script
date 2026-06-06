@@ -1,5 +1,6 @@
 package com.nailinai.noveltoscriptbackend.api;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.nailinai.noveltoscriptbackend.api.dto.CreateProjectRequest;
 import com.nailinai.noveltoscriptbackend.api.dto.ProjectResponse;
 import com.nailinai.noveltoscriptbackend.api.dto.ProjectSummaryResponse;
@@ -45,10 +46,11 @@ public class ProjectController {
         this.emotionAnalysis = emotionAnalysis;
     }
 
-    /** 列出所有项目（轻量级摘要）。 */
+    /** 列出当前用户的所有项目（轻量级摘要）。 */
     @GetMapping
     public ResponseEntity<List<ProjectSummaryResponse>> listAll() {
-        List<ProjectSummaryResponse> list = store.listAllProjects().stream()
+        Long userId = StpUtil.getLoginIdAsLong();
+        List<ProjectSummaryResponse> list = store.listProjectsByUser(userId).stream()
                 .map(ProjectSummaryResponse::from)
                 .toList();
         return ResponseEntity.ok(list);
@@ -57,8 +59,9 @@ public class ProjectController {
     /** 文本方式创建项目。 */
     @PostMapping
     public ResponseEntity<ProjectResponse> create(@Valid @RequestBody CreateProjectRequest req) {
+        Long userId = StpUtil.getLoginIdAsLong();
         NovelIngestService.IngestResult r = ingest.ingestText(
-                req.getTitle(), req.getSourceNovel(), req.getGenre(), req.getText());
+                req.getTitle(), req.getSourceNovel(), req.getGenre(), req.getText(), userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(r.project(), r.chapters()));
     }
 
@@ -69,24 +72,29 @@ public class ProjectController {
             @RequestParam(required = false) String sourceNovel,
             @RequestParam(required = false) String genre,
             @RequestParam("file") MultipartFile file) {
-        NovelIngestService.IngestResult r = ingest.ingestFile(title, sourceNovel, genre, file);
+        Long userId = StpUtil.getLoginIdAsLong();
+        NovelIngestService.IngestResult r = ingest.ingestFile(title, sourceNovel, genre, file, userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(r.project(), r.chapters()));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable long id) {
-        store.findProject(id)
+        Long userId = StpUtil.getLoginIdAsLong();
+        ProjectEntity p = store.findProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p, userId);
         store.deleteProject(id);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<ProjectResponse> get(@PathVariable long id) {
+        Long userId = StpUtil.getLoginIdAsLong();
         // 自动修正卡住的状态
         store.fixStuckProjectStatus(id);
         ProjectEntity p = store.findProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p, userId);
         List<ChapterEntity> chapters = store.listChapters(id);
         return ResponseEntity.ok(toResponse(p, chapters));
     }
@@ -97,6 +105,10 @@ public class ProjectController {
             @PathVariable long id,
             @PathVariable long chapterId,
             @RequestBody Map<String, String> body) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        ProjectEntity p = store.findProject(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p, userId);
         ChapterEntity ch = store.findChapter(chapterId)
                 .orElseThrow(() -> new ResourceNotFoundException("Chapter not found: " + chapterId));
         if (!ch.getProjectId().equals(id)) {
@@ -115,8 +127,10 @@ public class ProjectController {
     public ResponseEntity<Void> restoreProjectYaml(
             @PathVariable long id,
             @RequestBody Map<String, String> body) {
-        store.findProject(id)
+        Long userId = StpUtil.getLoginIdAsLong();
+        ProjectEntity p = store.findProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p, userId);
         String yaml = body.get("yaml");
         if (yaml == null || yaml.isBlank()) {
             throw new IllegalArgumentException("yaml is required");
@@ -133,8 +147,10 @@ public class ProjectController {
     @PostMapping("/{id}/analyze-emotions")
     public ResponseEntity<?> analyzeEmotions(@PathVariable long id,
                                               @RequestParam(defaultValue = "false") boolean refresh) {
+        Long userId = StpUtil.getLoginIdAsLong();
         ProjectEntity p = store.findProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p, userId);
 
         String yaml = p.getScriptYaml();
         if (yaml == null || yaml.isBlank()) {
@@ -162,8 +178,10 @@ public class ProjectController {
 
     @GetMapping("/{id}/emotions")
     public ResponseEntity<?> getEmotions(@PathVariable long id) {
-        store.findProject(id)
+        Long userId = StpUtil.getLoginIdAsLong();
+        ProjectEntity p = store.findProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p, userId);
 
         List<EmotionAnalysisService.EmotionArc> cached = emotionAnalysis.getCached(id);
         if (cached == null) {
@@ -175,8 +193,10 @@ public class ProjectController {
 
     @GetMapping("/{id}/script.yaml")
     public ResponseEntity<String> downloadScript(@PathVariable long id) {
+        Long userId = StpUtil.getLoginIdAsLong();
         ProjectEntity p = store.findProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
+        checkOwnership(p, userId);
         String yaml = p.getScriptYaml() != null ? p.getScriptYaml() : store.getCachedResult(id);
         if (yaml == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -214,5 +234,11 @@ public class ProjectController {
         r.createdAt = p.getCreatedAt();
         r.updatedAt = p.getUpdatedAt();
         return r;
+    }
+
+    private void checkOwnership(ProjectEntity p, Long userId) {
+        if (p.getUserId() != null && !p.getUserId().equals(userId)) {
+            throw new ResourceNotFoundException("Project not found: " + p.getId());
+        }
     }
 }

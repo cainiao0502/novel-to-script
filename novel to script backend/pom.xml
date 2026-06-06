@@ -32,6 +32,8 @@
         <mybatis-plus.version>3.5.14</mybatis-plus.version>
         <json-schema-validator.version>1.5.3</json-schema-validator.version>
         <poi.version>5.4.1</poi.version>
+        <sa-token.version>1.42.0</sa-token.version>
+        <tianai-captcha.version>1.5.5</tianai-captcha.version>
     </properties>
 
     <dependencies>
@@ -72,6 +74,26 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- Auth: Sa-Token -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-spring-boot3-starter</artifactId>
+            <version>${sa-token.version}</version>
+        </dependency>
+
+        <!-- Captcha: tianai-captcha (slider behavioral verification) -->
+        <dependency>
+            <groupId>cloud.tianai.captcha</groupId>
+            <artifactId>tianai-captcha-springboot-starter</artifactId>
+            <version>${tianai-captcha.version}</version>
+        </dependency>
+
+        <!-- Password: BCrypt (subset of Spring Security) -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
         </dependency>
 
         <!-- YAML (Jackson uses SnakeYAML under the hood) -->

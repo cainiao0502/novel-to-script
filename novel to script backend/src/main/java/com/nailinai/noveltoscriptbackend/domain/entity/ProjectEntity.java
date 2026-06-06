@@ -15,6 +15,9 @@ public class ProjectEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    @TableField("user_id")
+    private Long userId;
+
     private String title;
 
     @TableField("source_novel")

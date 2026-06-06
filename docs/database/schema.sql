@@ -12,6 +12,28 @@ CREATE DATABASE IF NOT EXISTS `novel_to_script`
 USE `novel_to_script`;
 
 -- ------------------------------------------------------------
+-- 0. users · 用户表
+--    描述: 存储注册用户信息；手机号作为登录账号，密码 BCrypt 加密。
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `users`;
+CREATE TABLE `users` (
+    `id`          BIGINT        NOT NULL AUTO_INCREMENT          COMMENT '主键',
+    `mobile`      VARCHAR(20)   NOT NULL                        COMMENT '手机号（登录账号）',
+    `password`    VARCHAR(255)  NOT NULL                        COMMENT '密码（BCrypt 加密）',
+    `nickname`    VARCHAR(50)   DEFAULT NULL                    COMMENT '昵称',
+    `avatar`      VARCHAR(500)  DEFAULT NULL                    COMMENT '头像 URL',
+    `status`      TINYINT       DEFAULT 1                       COMMENT '状态：1-正常，0-禁用',
+    `create_time` DATETIME      DEFAULT CURRENT_TIMESTAMP       COMMENT '创建时间',
+    `update_time` DATETIME      DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_mobile` (`mobile`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci
+  COMMENT = '用户表：手机号注册，BCrypt 密码';
+
+
+-- ------------------------------------------------------------
 -- 1. projects · 项目主表
 --    描述: 用户每次"上传/粘贴小说"创建一个项目；存储剧名、状态、
 --          进度、最终合并的剧本 YAML 和人物表 JSON。
@@ -19,6 +41,7 @@ USE `novel_to_script`;
 DROP TABLE IF EXISTS `projects`;
 CREATE TABLE `projects` (
     `id`                BIGINT          NOT NULL AUTO_INCREMENT          COMMENT '主键',
+    `user_id`           BIGINT          DEFAULT NULL                    COMMENT '所属用户（逻辑外键，关联 users.id）',
     `title`             VARCHAR(128)    NOT NULL                        COMMENT '剧名',
     `source_novel`      VARCHAR(256)    DEFAULT NULL                    COMMENT '原著出处（书名/作者）',
     `genre`             VARCHAR(64)     DEFAULT NULL                    COMMENT '题材标签，如"短剧/古装"',
@@ -33,7 +56,8 @@ CREATE TABLE `projects` (
     `updated_at`        TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_projects_status_created` (`status`, `created_at`),
-    KEY `idx_projects_updated`        (`updated_at`)
+    KEY `idx_projects_updated`        (`updated_at`),
+    KEY `idx_projects_user_id`        (`user_id`)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci

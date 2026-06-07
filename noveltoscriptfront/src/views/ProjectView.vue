@@ -756,7 +756,14 @@ function autoSelectChapter(chs) {
             </header>
             <ul class="char-list">
               <li v-for="c in displayCharacters" :key="c.charId" class="char-item">
-                <span class="char-avatar" :class="c.role === 'protagonist' ? 'protagonist' : (c.role === 'antagonist' ? 'antagonist' : '')">{{ (c.name || '?').slice(0,1) }}</span>
+                <span
+                  class="char-avatar"
+                  :style="{
+                    background: getCharColor(c.charId || c.id) + '25',
+                    borderColor: getCharColor(c.charId || c.id) + '50',
+                    color: getCharColor(c.charId || c.id)
+                  }"
+                >{{ (c.name || '?').slice(0,1) }}</span>
                 <div class="char-info">
                   <span class="char-name">{{ c.name }}</span>
                   <span class="char-id mono">{{ c.charId }}</span>
@@ -1218,16 +1225,6 @@ function autoSelectChapter(chs) {
   font-weight: 600; font-size: var(--text-body-sm);
   border: 1px solid var(--color-hairline-strong);
   transition: all var(--duration-fast) var(--ease-out-quad);
-}
-.char-avatar.protagonist {
-  background: rgba(107, 160, 123,0.1);
-  border-color: rgba(107, 160, 123,0.3);
-  color: var(--color-semantic-success);
-}
-.char-avatar.antagonist {
-  background: rgba(196, 122, 106,0.1);
-  border-color: rgba(196, 122, 106,0.3);
-  color: var(--color-semantic-error);
 }
 .char-info { display: flex; flex-direction: column; min-width: 0; }
 .char-name { font-size: var(--text-body-sm); color: var(--color-ink); font-weight: 500; }

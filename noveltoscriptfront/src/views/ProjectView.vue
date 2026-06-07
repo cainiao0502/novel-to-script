@@ -405,6 +405,11 @@ async function onAcceptRewrite({ sceneId, dialogueIndex, rewrittenLine }) {
       await api.restoreProjectYaml(projectId, newYaml)
     }
     await load()
+    // load() 刷新了 chapters 数组，需要同步 selectedChapter 指向新对象
+    if (selectedChapter.value) {
+      const updated = chapters.value.find(c => c.id === selectedChapter.value.id)
+      if (updated) selectedChapter.value = updated
+    }
   } catch (e) {
     showError('保存改稿失败：' + e.message)
   }

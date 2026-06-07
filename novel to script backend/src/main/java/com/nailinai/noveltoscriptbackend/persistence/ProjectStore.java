@@ -99,7 +99,7 @@ public class ProjectStore {
         ProjectEntity p = projectMapper.selectById(projectId);
         if (p == null) return;
         String status = p.getStatus();
-        if (!"GENERATING".equals(status) && !"PENDING".equals(status)) return;
+        if (!"GENERATING".equals(status) && !"PENDING".equals(status) && !"FAILED".equals(status)) return;
 
         List<ChapterEntity> chapters = listChapters(projectId);
         if (chapters.isEmpty()) return;
@@ -148,6 +148,14 @@ public class ProjectStore {
         p.setId(id);
         p.setProgress(progress);
         p.setCurrentChapter(currentChapter);
+        p.setUpdatedAt(Instant.now());
+        projectMapper.updateById(p);
+    }
+
+    public void updateProjectTotalChapters(long id, int total) {
+        ProjectEntity p = new ProjectEntity();
+        p.setId(id);
+        p.setTotalChapters(total);
         p.setUpdatedAt(Instant.now());
         projectMapper.updateById(p);
     }

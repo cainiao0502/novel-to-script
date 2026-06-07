@@ -110,6 +110,9 @@ public class ProjectController {
             // 从 YAML 提取章节并入库
             List<ChapterEntity> chapters = extractYamlChapters(yamlContent, p.getId());
 
+            // 更新项目总章节数
+            store.updateProjectTotalChapters(p.getId(), chapters.size());
+
             // 重新读取以获取完整数据
             p = store.findProject(p.getId()).orElseThrow();
             return ResponseEntity.status(HttpStatus.CREATED)
@@ -400,6 +403,7 @@ public class ProjectController {
                     c.setProjectId(projectId);
                     c.setIdx(idx);
                     c.setTitle(title);
+                    c.setContent("");
                     c.setStatus(ChapterStatus.DONE.name());
                     c.setSceneCount(sceneCount);
                     c.setGeneratedYaml(yamlContent);

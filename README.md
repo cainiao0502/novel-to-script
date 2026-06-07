@@ -3,7 +3,9 @@
 > 期末作业 · AI 辅助剧本创作
 > 把中文小说一键转成结构化 YAML 剧本（影视/短剧/网剧）
 
-📺 **在线演示**：[https://b23.tv/mrVRUuo](https://b23.tv/mrVRUuo)
+📺 **在线演示**：[https://b23.tv/mrVRUuo](https://b23.tv/mrVRUuo) · [http://xhslink.com/o/5W6OXAyw4hD](http://xhslink.com/o/5W6OXAyw4hD)
+
+> 注：演示视频声音没录上，画面操作完整。
 
 基于 LLM 的小说结构化拆解与剧本生成工具。支持粘贴文本或上传文件（.txt/.docx/.pdf），自动识别章节、逐章调用 AI 生成带场景/对白/旁白/镜头语言的标准化剧本，提供在线编辑、情感曲线分析、AI 改稿、多种格式导出等功能。
 

@@ -150,17 +150,24 @@ public class EmotionAnalysisService {
     }
 
     /**
-     * 缓存结果并返回。
+     * 缓存结果并返回（含 LLM 调用）。
      */
     public List<EmotionArc> analyzeAndCache(long projectId, String scriptYaml) {
         List<EmotionArc> result = analyze(scriptYaml);
+        cacheResult(projectId, result);
+        return result;
+    }
+
+    /**
+     * 仅将已有结果写入 Redis 缓存（不调 LLM）。
+     */
+    public void cacheResult(long projectId, List<EmotionArc> result) {
         String cacheKey = cacheKey(projectId);
         try {
             redis.opsForValue().set(cacheKey, json.writeValueAsString(result), CACHE_TTL);
         } catch (Exception e) {
             log.warn("Failed to cache emotion analysis for project {}: {}", projectId, e.getMessage());
         }
-        return result;
     }
 
     /**
@@ -182,13 +189,17 @@ public class EmotionAnalysisService {
 
     public List<EmotionArc> analyzeChapterAndCache(long chapterId, String yaml) {
         List<EmotionArc> result = analyze(yaml);
+        cacheChapterResult(chapterId, result);
+        return result;
+    }
+
+    public void cacheChapterResult(long chapterId, List<EmotionArc> result) {
         String cacheKey = chapterCacheKey(chapterId);
         try {
             redis.opsForValue().set(cacheKey, json.writeValueAsString(result), CACHE_TTL);
         } catch (Exception e) {
             log.warn("Failed to cache chapter emotion analysis for chapter {}: {}", chapterId, e.getMessage());
         }
-        return result;
     }
 
     public List<EmotionArc> getCachedChapter(long chapterId) {

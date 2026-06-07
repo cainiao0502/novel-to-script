@@ -6,7 +6,7 @@ const props = defineProps({
   loading: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['rewrite', 'close'])
+const emit = defineEmits(['rewrite', 'close', 'manual-edit'])
 
 const styles = [
   { id: 'dramatic', label: '更戏剧化', desc: '增强冲突与张力' },
@@ -41,6 +41,16 @@ function onRewrite(style) {
           <span class="toolbar-btn-desc">{{ s.desc }}</span>
         </button>
       </div>
+      <hr class="toolbar-divider">
+      <button
+        class="toolbar-btn toolbar-edit-btn"
+        :disabled="loading"
+        @click="$emit('manual-edit')"
+      >
+        <span class="toolbar-btn-label">✏️ 手动编辑</span>
+        <span class="toolbar-btn-desc">自定义台词</span>
+      </button>
+
       <div v-if="loading" class="toolbar-loading">
         <span class="spinner-sm" /> AI 正在改写…
       </div>
@@ -150,4 +160,13 @@ function onRewrite(style) {
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.toolbar-divider {
+  border: 0;
+  border-top: 1px solid var(--color-hairline);
+  margin: 8px -12px;
+}
+.toolbar-edit-btn .toolbar-btn-label {
+  font-size: var(--text-body-sm);
+}
 </style>

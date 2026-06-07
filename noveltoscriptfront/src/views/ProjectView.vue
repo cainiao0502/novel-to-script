@@ -8,6 +8,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ScriptEditor from '@/components/ScriptEditor.vue'
 import ScriptRender from '@/components/ScriptRender.vue'
+import ScreenplayPreview from '@/components/ScreenplayPreview.vue'
 import EmotionCurve from '@/components/EmotionCurve.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
 
@@ -665,6 +666,11 @@ function autoSelectChapter(chs) {
                       :class="{ active: viewMode === 'emotion' }"
                       @click="switchView('emotion'); openEmotionAnalysis()"
                     >情感曲线</button>
+                    <button
+                      class="etab"
+                      :class="{ active: viewMode === 'preview' }"
+                      @click="switchView('preview')"
+                    >导出预览</button>
                   </div>
                   <span class="ph-context" v-if="selectedChapter">第 {{ selectedChapter.idx }} 章</span>
                   <span v-if="selectedChapter?.status === 'GENERATING'" class="ph-gen">
@@ -717,6 +723,10 @@ function autoSelectChapter(chs) {
                 :arcs="selectedChapter ? (chapterEmotionCache[selectedChapter.id]?.arcs || []) : (emotionData?.arcs || [])"
                 :loading="selectedChapter ? (chapterEmotionLoading && !chapterEmotionCache[selectedChapter.id]) : emotionLoading"
                 :context="selectedChapter ? `第 ${selectedChapter.idx} 章` : '全剧'"
+              />
+              <ScreenplayPreview
+                v-else-if="viewMode === 'preview'"
+                :yaml="selectedChapter?.generatedYaml || project.scriptYaml"
               />
             </template>
           </main>

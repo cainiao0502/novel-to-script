@@ -273,14 +273,7 @@ public class ProjectStore {
     }
 
     public void saveEmotionAnalysisResult(long projectId, Long chapterId, String resultJson) {
-        EmotionAnalysisEntity e = new EmotionAnalysisEntity();
-        e.setProjectId(projectId);
-        e.setChapterId(chapterId);
-        e.setResultJson(resultJson);
-        Instant now = Instant.now();
-        e.setCreatedAt(now);
-        e.setUpdatedAt(now);
-        emotionAnalysisMapper.insert(e);
+        emotionAnalysisMapper.upsert(projectId, chapterId, resultJson);
     }
 
     // ============ Redis progress ============

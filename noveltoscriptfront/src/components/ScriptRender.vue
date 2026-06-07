@@ -19,6 +19,11 @@ const highlightedChar = ref(null)
 const selectedDialogue = ref(null) // { sceneId, dialogueIndex, line, character }
 const rewriteLoading = ref(false)
 
+// ── Inline manual editing ──
+const editingDialogue = ref(null) // { sceneId, dialogueIndex }
+const editText = ref('')
+const editTextareaRef = ref(null)
+
 function toggleHighlight(charId) {
   highlightedChar.value = highlightedChar.value === charId ? null : charId
 }
@@ -150,6 +155,52 @@ function handleRewrite(style) {
     context
   })
 }
+
+// ── Inline manual editing ──
+
+function handleManualEdit() {
+  const d = selectedDialogue.value
+  if (!d) return
+  editText.value = d.line
+  editingDialogue.value = { sceneId: d.sceneId, dialogueIndex: d.dialogueIndex }
+  closeToolbar()
+}
+
+function confirmEdit() {
+  const e = editingDialogue.value
+  if (!e) return
+  const newLine = editText.value.trim()
+  if (!newLine) return
+  emit('accept-rewrite', {
+    sceneId: e.sceneId,
+    dialogueIndex: e.dialogueIndex,
+    rewrittenLine: newLine
+  })
+  editingDialogue.value = null
+  editText.value = ''
+}
+
+function cancelEdit() {
+  editingDialogue.value = null
+  editText.value = ''
+}
+
+function isEditing(sceneId, dialogueIdx) {
+  return editingDialogue.value
+    && editingDialogue.value.sceneId === sceneId
+    && editingDialogue.value.dialogueIndex === dialogueIdx
+}
+
+// Auto-focus textarea when editing starts
+// Note: ref is inside v-for, so Vue 3 wraps it in an array
+watch(editingDialogue, (val) => {
+  if (val) {
+    nextTick(() => {
+      const el = Array.isArray(editTextareaRef.value) ? editTextareaRef.value[0] : editTextareaRef.value
+      el?.focus()
+    })
+  }
+})
 
 /** Called by parent when rewrite completes (to reset loading / close toolbar). */
 function onRewriteDone() {
@@ -409,23 +460,49 @@ function animateIn() {
               v-for="(d, di) in scene.dialogues" :key="di"
               class="dialogue-wrap"
             >
+              <!-- Inline manual edit mode -->
               <div
-                class="dialogue-block"
-                :class="{
-                  'is-highlighted': highlightedChar === d.character,
-                  'is-dimmed': highlightedChar && highlightedChar !== d.character,
-                  'is-selected': selectedDialogue && selectedDialogue.sceneId === (scene.scene_id || `s_${si}`) && selectedDialogue.dialogueIndex === di
-                }"
-                @mousedown.prevent
-                @click="selectDialogue($event, si, di)"
+                v-if="isEditing(scene.scene_id || `s_${si}`, di)"
+                class="dialogue-edit-area"
               >
                 <div class="dialogue-character">
                   {{ charName(d.character) }}
                   <span v-if="d.parenthetical" class="dialogue-parenthetical">（{{ d.parenthetical }}）</span>
-                  <span v-if="d.emotion" class="dialogue-emotion"> · {{ d.emotion }}</span>
                 </div>
-                <p class="dialogue-line">{{ d.line }}</p>
+                <textarea
+                  v-model="editText"
+                  class="edit-textarea"
+                  rows="3"
+                  ref="editTextareaRef"
+                  @keydown.escape="cancelEdit"
+                  @keydown.enter.meta="confirmEdit"
+                  @keydown.enter.ctrl="confirmEdit"
+                />
+                <div class="edit-actions">
+                  <button class="edit-btn edit-save" @click="confirmEdit">保存</button>
+                  <button class="edit-btn edit-cancel" @click="cancelEdit">取消</button>
+                </div>
               </div>
+              <!-- Normal display mode -->
+              <template v-else>
+                <div
+                  class="dialogue-block"
+                  :class="{
+                    'is-highlighted': highlightedChar === d.character,
+                    'is-dimmed': highlightedChar && highlightedChar !== d.character,
+                    'is-selected': selectedDialogue && selectedDialogue.sceneId === (scene.scene_id || `s_${si}`) && selectedDialogue.dialogueIndex === di
+                  }"
+                  @mousedown.prevent
+                  @click="selectDialogue($event, si, di)"
+                >
+                  <div class="dialogue-character">
+                    {{ charName(d.character) }}
+                    <span v-if="d.parenthetical" class="dialogue-parenthetical">（{{ d.parenthetical }}）</span>
+                    <span v-if="d.emotion" class="dialogue-emotion"> · {{ d.emotion }}</span>
+                  </div>
+                  <p class="dialogue-line">{{ d.line }}</p>
+                </div>
+              </template>
 
               <!-- Inline rewrite diff -->
               <div
@@ -502,6 +579,7 @@ function animateIn() {
       :loading="rewriteLoading"
       @rewrite="handleRewrite"
       @close="closeToolbar"
+      @manual-edit="handleManualEdit"
     />
   </div>
 </template>
@@ -905,6 +983,70 @@ function animateIn() {
   border-color: var(--color-hairline-strong);
 }
 .diff-reject:hover {
+  background: var(--color-surface-3);
+  color: var(--color-ink);
+}
+
+/* ── Inline manual edit mode ── */
+.dialogue-edit-area {
+  margin: var(--space-md) 0;
+  padding: var(--space-md);
+  background: rgba(125,154,110,0.04);
+  border: 1px solid rgba(125,154,110,0.2);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-primary);
+}
+.edit-textarea {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  margin: var(--space-sm) auto;
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-text);
+  font-size: var(--text-body);
+  line-height: 1.8;
+  color: var(--color-ink);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
+.edit-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(125,154,110,0.15);
+}
+.edit-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+.edit-btn {
+  height: 30px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+.edit-save {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+.edit-save:hover { filter: brightness(1.1); }
+.edit-save:active { transform: scale(0.96); }
+.edit-cancel {
+  background: transparent;
+  color: var(--color-ink-subtle);
+  border-color: var(--color-hairline-strong);
+}
+.edit-cancel:hover {
   background: var(--color-surface-3);
   color: var(--color-ink);
 }

@@ -145,8 +145,13 @@ public class ProjectController {
     }
 
     /**
-     * 触发全剧情绪曲线分析。
-     * 结果入库持久化，再次请求直接查库返回。
+     * 全剧情绪曲线分析。
+     *
+     * 缓存链路：Redis → MySQL → LLM
+     * 1. 检查 Redis 缓存
+     * 2. Redis 无 → 检查 MySQL
+     * 3. MySQL 有 → 写入 Redis → 返回
+     * 4. MySQL 无 → 调用 LLM → 写入 Redis + MySQL → 返回
      */
     @PostMapping("/{id}/analyze-emotions")
     public ResponseEntity<?> analyzeEmotions(@PathVariable long id,
@@ -162,24 +167,36 @@ public class ProjectController {
                     .body(Map.of("error", "Script not ready. Generate the script first."));
         }
 
-        // 先查库（refresh=true 时跳过）
+        // 1. Redis
+        if (!refresh) {
+            List<EmotionAnalysisService.EmotionArc> cached = emotionAnalysis.getCached(id);
+            if (cached != null) {
+                return ResponseEntity.ok(Map.of("arcs", cached, "source", "cache"));
+            }
+        }
+
+        // 2. MySQL（refresh=true 时跳过）
         if (!refresh) {
             String cachedJson = store.getEmotionAnalysisResult(id);
             if (cachedJson != null) {
                 try {
-                    List<EmotionAnalysisService.EmotionArc> cached = json.readValue(cachedJson,
+                    List<EmotionAnalysisService.EmotionArc> fromDb = json.readValue(cachedJson,
                             new TypeReference<List<EmotionAnalysisService.EmotionArc>>() {});
-                    return ResponseEntity.ok(Map.of("arcs", cached, "source", "cache"));
+                    // 3. 回写 Redis
+                    emotionAnalysis.cacheResult(id, fromDb);
+                    return ResponseEntity.ok(Map.of("arcs", fromDb, "source", "cache"));
                 } catch (Exception e) {
-                    log.warn("Failed to deserialize stored emotion analysis, re-analyzing: {}", e.getMessage());
+                    log.warn("Failed to deserialize DB emotion analysis, re-analyzing: {}", e.getMessage());
                 }
             }
         }
 
+        // 4. LLM
         try {
             List<EmotionAnalysisService.EmotionArc> result = emotionAnalysis.analyze(yaml);
             String resultJson = json.writeValueAsString(result);
             store.saveEmotionAnalysisResult(id, null, resultJson);
+            emotionAnalysis.cacheResult(id, result);
             return ResponseEntity.ok(Map.of("arcs", result, "source", "fresh"));
         } catch (Exception e) {
             log.error("Emotion analysis failed for project {}", id, e);
@@ -190,7 +207,7 @@ public class ProjectController {
 
     /**
      * 单章情绪曲线分析。
-     * 取该章节的 generated_yaml，仅分析该章内角色在各场戏中的情绪。
+     * 缓存链路：Redis → MySQL → LLM
      */
     @PostMapping("/{id}/chapters/{chapterId}/analyze-emotions")
     public ResponseEntity<?> analyzeChapterEmotions(
@@ -213,22 +230,32 @@ public class ProjectController {
                     .body(Map.of("error", "Chapter script not ready. Generate the script first."));
         }
 
-        // 先查库
+        // 1. Redis
+        List<EmotionAnalysisService.EmotionArc> cached = emotionAnalysis.getCachedChapter(chapterId);
+        if (cached != null) {
+            return ResponseEntity.ok(Map.of("arcs", cached, "source", "cache"));
+        }
+
+        // 2. MySQL
         String cachedJson = store.getChapterEmotionAnalysisResult(id, chapterId);
         if (cachedJson != null) {
             try {
-                List<EmotionAnalysisService.EmotionArc> cached = json.readValue(cachedJson,
+                List<EmotionAnalysisService.EmotionArc> fromDb = json.readValue(cachedJson,
                         new TypeReference<List<EmotionAnalysisService.EmotionArc>>() {});
-                return ResponseEntity.ok(Map.of("arcs", cached, "source", "cache"));
+                // 3. 回写 Redis
+                emotionAnalysis.cacheChapterResult(chapterId, fromDb);
+                return ResponseEntity.ok(Map.of("arcs", fromDb, "source", "cache"));
             } catch (Exception e) {
                 log.warn("Failed to deserialize stored chapter emotion analysis, re-analyzing: {}", e.getMessage());
             }
         }
 
+        // 4. LLM
         try {
             List<EmotionAnalysisService.EmotionArc> result = emotionAnalysis.analyze(yaml);
             String resultJson = json.writeValueAsString(result);
             store.saveEmotionAnalysisResult(id, chapterId, resultJson);
+            emotionAnalysis.cacheChapterResult(chapterId, result);
             return ResponseEntity.ok(Map.of("arcs", result, "source", "fresh"));
         } catch (Exception e) {
             log.error("Chapter emotion analysis failed for project {} chapter {}", id, chapterId, e);

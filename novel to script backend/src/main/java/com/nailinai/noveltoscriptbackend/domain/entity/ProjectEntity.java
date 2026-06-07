@@ -1,5 +1,6 @@
 package com.nailinai.noveltoscriptbackend.domain.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -42,7 +43,8 @@ public class ProjectEntity {
     @TableField("characters_yaml")
     private String charactersYaml;
 
-    @TableField("error_message")
+    /** 必须允许写入 null，否则成功时无法清空旧的失败信息 */
+    @TableField(value = "error_message", updateStrategy = FieldStrategy.ALWAYS)
     private String errorMessage;
 
     @TableField("created_at")

@@ -46,6 +46,9 @@ export const api = {
   uploadProject(formData) {
     return http.post('/projects/upload', formData).then((r) => r.data)
   },
+  importYaml(formData) {
+    return http.post('/projects/import-yaml', formData, { timeout: 30000 }).then((r) => r.data)
+  },
   listProjects() {
     return http.get('/projects').then((r) => r.data)
   },

@@ -252,6 +252,10 @@ public class ProjectStore {
         chapterMapper.updateById(c);
     }
 
+    public com.nailinai.noveltoscriptbackend.persistence.mapper.ChapterMapper getChapterMapper() {
+        return chapterMapper;
+    }
+
     public void updateProjectScriptYaml(long id, String yaml) {
         ProjectEntity p = new ProjectEntity();
         p.setId(id);

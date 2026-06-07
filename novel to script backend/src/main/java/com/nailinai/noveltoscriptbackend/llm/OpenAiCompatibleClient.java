@@ -90,7 +90,37 @@ public class OpenAiCompatibleClient implements LlmClient {
         if (content == null) {
             throw new LlmException("LLM content is empty");
         }
-        return content.toString();
+        return stripCodeFences(content.toString());
+    }
+
+    /**
+     * 剥离 LLM 输出首尾可能包裹的 Markdown 代码围栏（```yaml … ``` / ```json … ``` / ``` … ```）。
+     * 部分模型即使 prompt 明确要求"不要包裹 ```"，仍会输出带围栏的内容，
+     * 直接进入 YAML/JSON 解析会因首字符为反引号而失败。
+     * 该方法仅在首尾处理，不影响正文中的反引号。
+     */
+    static String stripCodeFences(String raw) {
+        if (raw == null) return "";
+        String s = raw.strip();
+        if (s.length() >= 3 && s.charAt(0) == '`' && s.charAt(1) == '`' && s.charAt(2) == '`') {
+            int firstNewline = s.indexOf('\n');
+            if (firstNewline >= 0) {
+                s = s.substring(firstNewline + 1);
+            } else {
+                s = s.substring(3);
+            }
+            s = s.stripLeading();
+        }
+        if (s.length() >= 3 && s.charAt(s.length() - 1) == '`'
+                && s.charAt(s.length() - 2) == '`' && s.charAt(s.length() - 3) == '`') {
+            // 找最后一个 ``` 起始位置
+            int lastFence = s.lastIndexOf("```");
+            if (lastFence >= 0) {
+                s = s.substring(0, lastFence);
+            }
+            s = s.stripTrailing();
+        }
+        return s;
     }
 
     @Override

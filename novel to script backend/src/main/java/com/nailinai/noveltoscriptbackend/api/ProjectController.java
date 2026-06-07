@@ -5,7 +5,10 @@ import com.nailinai.noveltoscriptbackend.api.dto.CreateProjectRequest;
 import com.nailinai.noveltoscriptbackend.api.dto.ProjectResponse;
 import com.nailinai.noveltoscriptbackend.api.dto.ProjectSummaryResponse;
 import com.nailinai.noveltoscriptbackend.domain.entity.ChapterEntity;
+import com.nailinai.noveltoscriptbackend.domain.entity.ChapterStatus;
+import com.nailinai.noveltoscriptbackend.domain.entity.ProjectCharacterEntity;
 import com.nailinai.noveltoscriptbackend.domain.entity.ProjectEntity;
+import com.nailinai.noveltoscriptbackend.domain.entity.ProjectStatus;
 import com.nailinai.noveltoscriptbackend.novel.NovelIngestService;
 import com.nailinai.noveltoscriptbackend.persistence.ProjectStore;
 import com.nailinai.noveltoscriptbackend.script.EmotionAnalysisService;
@@ -27,6 +30,9 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -68,6 +74,50 @@ public class ProjectController {
         NovelIngestService.IngestResult r = ingest.ingestText(
                 req.getTitle(), req.getSourceNovel(), req.getGenre(), req.getText(), userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(r.project(), r.chapters()));
+    }
+
+    /** 导入 YAML 剧本文件直接创建项目（不走 AI 生成）。 */
+    @PostMapping(value = "/import-yaml", consumes = "multipart/form-data")
+    public ResponseEntity<ProjectResponse> importYaml(@RequestParam("file") MultipartFile file) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        try {
+            String yamlContent = new String(file.getBytes(), StandardCharsets.UTF_8);
+            if (yamlContent.isBlank()) {
+                return ResponseEntity.badRequest().build();
+            }
+
+            // 从 YAML 提取标题
+            String title = extractYamlTitle(yamlContent);
+            if (title == null || title.isBlank()) {
+                title = file.getOriginalFilename();
+                if (title != null && title.contains(".")) {
+                    title = title.substring(0, title.lastIndexOf('.'));
+                }
+            }
+
+            // 创建项目
+            ProjectEntity p = store.createProject(title, null, null, 0, userId);
+
+            // 保存 YAML + 标记 COMPLETED
+            store.saveProjectScript(p.getId(), yamlContent, null);
+
+            // 从 YAML 提取人物并保存
+            List<ProjectCharacterEntity> chars = extractYamlCharacters(yamlContent, p.getId());
+            if (!chars.isEmpty()) {
+                store.replaceProjectCharacters(p.getId(), chars);
+            }
+
+            // 从 YAML 提取章节并入库
+            List<ChapterEntity> chapters = extractYamlChapters(yamlContent, p.getId());
+
+            // 重新读取以获取完整数据
+            p = store.findProject(p.getId()).orElseThrow();
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(toResponse(p, chapters));
+        } catch (Exception e) {
+            log.error("Failed to import YAML script", e);
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     /** 文件方式（.txt / .docx）创建项目。 */
@@ -302,6 +352,96 @@ public class ProjectController {
                 .header("Content-Disposition", "attachment; filename=\"project-" + id + ".yaml\"")
                 .header("Content-Type", "application/x-yaml; charset=utf-8")
                 .body(yaml);
+    }
+
+    // ── YAML 导入辅助 ──
+
+    private static final ObjectMapper yamlReader = new ObjectMapper(new YAMLFactory())
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+    /** 从 YAML 内容提取剧本标题，取 meta.title。 */
+    private String extractYamlTitle(String yamlContent) {
+        try {
+            Map<?, ?> doc = yamlReader.readValue(yamlContent, Map.class);
+            Object meta = doc.get("meta");
+            if (meta instanceof Map<?, ?> m) {
+                Object t = m.get("title");
+                if (t != null) return t.toString();
+            }
+        } catch (Exception e) {
+            log.debug("Could not extract title from YAML: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /** 从 YAML 内容提取章节列表并入库。 */
+    private List<ChapterEntity> extractYamlChapters(String yamlContent, long projectId) {
+        java.util.List<ChapterEntity> result = new java.util.ArrayList<>();
+        try {
+            Map<?, ?> doc = yamlReader.readValue(yamlContent, Map.class);
+            Object raw = doc.get("scenes");
+            if (raw instanceof List<?> scenes) {
+                // 按 chapter 字段分组
+                java.util.LinkedHashMap<Integer, Integer> chMap = new java.util.LinkedHashMap<>();
+                for (Object s : scenes) {
+                    if (s instanceof Map<?, ?> m) {
+                        Object ch = m.get("chapter");
+                        int chapterNum = (ch instanceof Number n) ? n.intValue() : 1;
+                        chMap.merge(chapterNum, 1, Integer::sum);
+                    }
+                }
+
+                for (java.util.Map.Entry<Integer, Integer> entry : chMap.entrySet()) {
+                    int idx = entry.getKey();
+                    int sceneCount = entry.getValue();
+                    String title = "第" + idx + "章";
+
+                    ChapterEntity c = new ChapterEntity();
+                    c.setProjectId(projectId);
+                    c.setIdx(idx);
+                    c.setTitle(title);
+                    c.setStatus(ChapterStatus.DONE.name());
+                    c.setSceneCount(sceneCount);
+                    c.setGeneratedYaml(yamlContent);
+                    Instant now = Instant.now();
+                    c.setCreatedAt(now);
+                    c.setUpdatedAt(now);
+                    store.getChapterMapper().insert(c);
+                    result.add(c);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not extract chapters from YAML: {}", e.getMessage());
+        }
+        return result;
+    }
+
+    /** 从 YAML 内容提取人物列表。 */
+    private List<ProjectCharacterEntity> extractYamlCharacters(String yamlContent, long projectId) {
+        List<ProjectCharacterEntity> result = new java.util.ArrayList<>();
+        try {
+            Map<?, ?> doc = yamlReader.readValue(yamlContent, Map.class);
+            Object raw = doc.get("characters");
+            if (raw instanceof List<?> chars) {
+                for (Object c : chars) {
+                    if (c instanceof Map<?, ?> m) {
+                        ProjectCharacterEntity e = new ProjectCharacterEntity();
+                        e.setProjectId(projectId);
+                        e.setCharId(String.valueOf(m.get("id")));
+                        e.setName(m.get("name") != null ? m.get("name").toString() : null);
+                        e.setRole(m.get("role") != null ? m.get("role").toString() : null);
+                        e.setFullDataJson(yamlReader.writeValueAsString(c));
+                        Instant now = java.time.Instant.now();
+                        e.setCreatedAt(now);
+                        e.setUpdatedAt(now);
+                        result.add(e);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not extract characters from YAML: {}", e.getMessage());
+        }
+        return result;
     }
 
     private ProjectResponse toResponse(ProjectEntity p, List<ChapterEntity> chapters) {

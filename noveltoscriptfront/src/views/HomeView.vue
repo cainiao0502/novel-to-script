@@ -25,6 +25,9 @@ const form = reactive({
 const fileInput = ref(null)
 const fileName = ref('')
 const fileBlob = ref(null)
+const yamlFileInput = ref(null)
+const yamlFileName = ref('')
+const yamlFileBlob = ref(null)
 
 const project = ref(null)
 const chapters = ref([])
@@ -32,6 +35,7 @@ const chapters = ref([])
 const charCount = computed(() => form.text.length)
 const canSubmit = computed(() => {
   if (mode.value === 'paste') return form.title.trim() && form.text.trim().length > 0
+  if (mode.value === 'yaml') return yamlFileBlob.value
   return form.title.trim() && fileBlob.value
 })
 
@@ -51,6 +55,14 @@ function onFilePick(e) {
   e.target.value = ''
 }
 
+function onYamlFilePick(e) {
+  const f = e.target.files?.[0]
+  if (!f) return
+  yamlFileBlob.value = f
+  yamlFileName.value = f.name
+  e.target.value = ''
+}
+
 function switchMode(m) {
   mode.value = m
 }
@@ -60,6 +72,17 @@ async function submit() {
   error.value = ''
   submitting.value = true
   try {
+    if (mode.value === 'yaml') {
+      const fd = new FormData()
+      fd.append('file', yamlFileBlob.value)
+      const result = await api.importYaml(fd)
+      project.value = result
+      chapters.value = result.chapters || []
+      await nextTick()
+      animatePreview()
+      return
+    }
+
     let result
     if (mode.value === 'paste') {
       result = await api.createProject({
@@ -109,12 +132,19 @@ async function startGeneration() {
   }
 }
 
+function goToProject() {
+  if (!project.value) return
+  router.push({ name: 'project', params: { id: project.value.id } })
+}
+
 function reset() {
   project.value = null
   chapters.value = []
   form.text = ''
   fileBlob.value = null
   fileName.value = ''
+  yamlFileBlob.value = null
+  yamlFileName.value = ''
 }
 
 function badgeClass(s) {
@@ -177,6 +207,9 @@ function statusLabel(s) {
             <button class="wz-tab" :class="{ active: mode === 'upload' }" @click="switchMode('upload')">
               上传文件
             </button>
+            <button class="wz-tab" :class="{ active: mode === 'yaml' }" @click="switchMode('yaml')">
+              导入 YAML
+            </button>
           </div>
 
           <div class="wz-fields">
@@ -195,7 +228,7 @@ function statusLabel(s) {
             <textarea v-model="form.text" class="wz-textarea" placeholder="粘贴小说正文。至少 3 章才能生成剧本。" rows="10" />
           </div>
 
-          <div v-else class="wz-upload">
+          <div v-else-if="mode === 'upload'" class="wz-upload">
             <label class="wz-drop">
               <input ref="fileInput" type="file" accept=".txt,.docx,.pdf" @change="onFilePick" class="wz-file-hidden" />
               <template v-if="!fileName">
@@ -217,13 +250,35 @@ function statusLabel(s) {
             </label>
           </div>
 
+          <!-- YAML import -->
+          <div v-else class="wz-upload">
+            <label class="wz-drop">
+              <input ref="yamlFileInput" type="file" accept=".yaml,.yml" @change="onYamlFilePick" class="wz-file-hidden" />
+              <template v-if="!yamlFileName">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" class="wz-drop-icon">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+                <span>选择 YAML 剧本文件</span>
+                <span class="wz-drop-hint">.yaml，直接导入已格式化的剧本</span>
+              </template>
+              <template v-else>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-semantic-success)">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span>{{ yamlFileName }}</span>
+                <span class="wz-drop-hint">点击重新选择</span>
+              </template>
+            </label>
+          </div>
+
           <div v-if="error" class="wz-error">{{ error }}</div>
 
           <div class="wz-foot">
-            <span class="wz-hint">提交后预览章节；至少 3 章才能继续。</span>
+            <span class="wz-hint">{{ mode === 'yaml' ? '导入后直接进入剧本编辑视图。' : '提交后预览章节；至少 3 章才能继续。' }}</span>
             <button class="wz-submit" :disabled="!canSubmit || submitting" @click="submit">
               <span v-if="submitting" class="spinner" />
-              <span>{{ submitting ? '解析中' : '解析章节' }}</span>
+              <span>{{ submitting ? '导入中' : mode === 'yaml' ? '导入剧本' : '解析章节' }}</span>
               <svg v-if="!submitting" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
               </svg>
@@ -254,8 +309,8 @@ function statusLabel(s) {
           </ol>
           <div class="pv-actions">
             <button class="pv-btn-ghost" @click="reset">重新选择</button>
-            <button class="wz-submit" @click="startGeneration">
-              开始生成剧本
+            <button class="wz-submit" @click="mode === 'yaml' ? goToProject() : startGeneration()">
+              {{ mode === 'yaml' ? '进入剧本' : '开始生成剧本' }}
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
               </svg>

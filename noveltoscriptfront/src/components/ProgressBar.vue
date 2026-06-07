@@ -27,12 +27,7 @@ const generatingIdx = computed(() => {
 
 const computedProgress = computed(() => {
   if (!props.chapters.length) return props.progress
-  let weight = 0
-  props.chapters.forEach(ch => {
-    if (ch.status === 'DONE' || ch.status === 'QUEUED') weight += 1
-    else if (ch.status === 'GENERATING') weight += 0.35
-  })
-  return Math.max(0, Math.min(100, Math.round((weight / props.chapters.length) * 100)))
+  return Math.round((doneCount.value / props.chapters.length) * 100)
 })
 
 const isActive = computed(() =>
@@ -140,9 +135,11 @@ const statusLabel = (s) => ({
       <span class="eyebrow">生成进度</span>
       <span class="caption">
         <template v-if="isActive && generatingIdx">
-          第 {{ generatingIdx }} 章生成中 ·
+          第 {{ generatingIdx }} 章生成中
         </template>
-        {{ statusLabel(status) }}
+        <template v-else>
+          {{ statusLabel(status) }}
+        </template>
         <template v-if="chapters.length">
           · 已完成 {{ doneCount }}/{{ chapters.length }} 章
         </template>

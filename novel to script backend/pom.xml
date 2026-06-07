@@ -82,7 +82,6 @@
             <artifactId>sa-token-spring-boot3-starter</artifactId>
             <version>${sa-token.version}</version>
         </dependency>
-
         <!-- Captcha: tianai-captcha (slider behavioral verification) -->
         <dependency>
             <groupId>cloud.tianai.captcha</groupId>

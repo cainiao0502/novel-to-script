@@ -56,6 +56,7 @@ const title = computed(() => parsed.value?.meta?.title || '剧本')
 function downloadFountain() {
   const text = fountainText.value
   if (!text) return
+  animateExport()
   const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -68,10 +69,20 @@ function downloadFountain() {
 }
 
 function printPdf() {
+  animateExport()
   window.print()
 }
 
+function animateExport() {
+  const el = toolbarRef.value
+  if (!el) return
+  const tl = gsap.timeline()
+  tl.to(el, { scale: 1.015, duration: 0.1, ease: 'power1.out' })
+    .to(el, { scale: 1, duration: 0.25, ease: 'power2.out' })
+}
+
 const toastText = ref('')
+const toolbarRef = ref(null)
 let toastTimer = null
 
 function copyFountain() {
@@ -109,7 +120,7 @@ function showToast(msg) {
 
 <template>
   <div class="screenplay-preview">
-    <div class="preview-toolbar">
+    <div class="preview-toolbar" ref="toolbarRef">
       <span class="preview-label">{{ title }}</span>
       <div class="preview-actions">
         <button class="preview-btn" @click="downloadFountain" :disabled="!fountainText">

@@ -1,7 +1,8 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { parse as parseYaml } from 'yaml'
 import { yamlToFountain } from '@/utils/fountainGenerator'
+import gsap from 'gsap'
 
 const props = defineProps({
   yaml: { type: String, default: '' }
@@ -69,6 +70,41 @@ function downloadFountain() {
 function printPdf() {
   window.print()
 }
+
+const toastText = ref('')
+let toastTimer = null
+
+function copyFountain() {
+  const text = fountainText.value
+  if (!text) return
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('✓ 已复制')
+  }).catch(() => {
+    showToast('复制失败')
+  })
+}
+
+function showToast(msg) {
+  toastText.value = msg
+  clearTimeout(toastTimer)
+  nextTick(() => {
+    const el = document.querySelector('.sp-toast')
+    if (el) {
+      gsap.fromTo(el,
+        { opacity: 0, y: 12, scale: 0.95 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.25, ease: 'power2.out' }
+      )
+    }
+  })
+  toastTimer = setTimeout(() => {
+    const el = document.querySelector('.sp-toast')
+    if (el) {
+      gsap.to(el, { opacity: 0, y: -8, duration: 0.2, ease: 'power2.in', onComplete: () => { toastText.value = '' } })
+    } else {
+      toastText.value = ''
+    }
+  }, 1500)
+}
 </script>
 
 <template>
@@ -82,8 +118,13 @@ function printPdf() {
         <button class="preview-btn preview-btn-primary" @click="printPdf" :disabled="!fountainText">
           导出 PDF · 打印
         </button>
+        <button class="preview-btn" @click="copyFountain" :disabled="!fountainText" title="复制剧本">
+          复制
+        </button>
       </div>
     </div>
+
+    <div v-if="toastText" class="sp-toast">{{ toastText }}</div>
 
     <div class="screenplay-content" v-if="parsed">
       <template v-for="(scene, si) in parsed.scenes || []" :key="scene.scene_id || si">
@@ -316,5 +357,21 @@ function printPdf() {
     margin: 0.5in 0.5in 0.5in 1in;
     size: letter;
   }
+}
+
+.sp-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-hairline-strong);
+  color: var(--color-ink);
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-body-sm);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  z-index: 999;
+  pointer-events: none;
 }
 </style>

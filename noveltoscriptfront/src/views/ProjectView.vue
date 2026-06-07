@@ -435,6 +435,16 @@ function roleLabel(r) {
   return ({ protagonist: '主角', antagonist: '反派', supporting: '配角', npc: 'NPC' })[r] || r
 }
 
+const CHAR_COLORS = [
+  '#B8A9E8', '#F0C8A0', '#A8D8A8', '#A0C4E8',
+  '#F0A8A8', '#C8B0E0', '#A0D8D0', '#E8D0A0',
+]
+function getCharColor(id) {
+  let h = 0
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) & 0xffff
+  return CHAR_COLORS[Math.abs(h) % CHAR_COLORS.length]
+}
+
 // 从章节 YAML 中提取出现的人物 ID
 function extractCharacterIds(yamlStr) {
   if (!yamlStr) return []

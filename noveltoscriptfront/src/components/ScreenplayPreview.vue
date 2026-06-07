@@ -33,6 +33,16 @@ const charNames = computed(() => {
 
 const charName = (id) => charNames.value[id] || id
 
+const CHAR_COLORS = [
+  '#B8A9E8', '#F0C8A0', '#A8D8A8', '#A0C4E8',
+  '#F0A8A8', '#C8B0E0', '#A0D8D0', '#E8D0A0',
+]
+function getCharColor(id) {
+  let h = 0
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) & 0xffff
+  return CHAR_COLORS[Math.abs(h) % CHAR_COLORS.length]
+}
+
 // Strip existing parentheses from parenthetical value (YAML data sometimes includes them)
 function cleanParen(text) {
   return text ? text.replace(/^[（(]\s*|\s*[）)]$/g, '') : ''
@@ -97,15 +107,15 @@ function printPdf() {
 
         <!-- Dialogues -->
         <div v-for="(d, di) in scene.dialogues" :key="'d'+di" class="sp-dialogue-group">
-          <div class="sp-character">{{ charName(d.character).toUpperCase() }}</div>
+          <div class="sp-character" :style="{ color: getCharColor(d.character) }">{{ charName(d.character).toUpperCase() }}</div>
           <div v-if="d.parenthetical" class="sp-parenthetical">（{{ cleanParen(d.parenthetical) }}）</div>
-          <div class="sp-dialogue">{{ d.line }}</div>
+          <div class="sp-dialogue" :style="{ color: getCharColor(d.character) }">{{ d.line }}</div>
         </div>
 
         <!-- Voiceover -->
         <div v-for="(v, vi) in scene.voiceover" :key="'v'+vi" class="sp-dialogue-group">
-          <div class="sp-character">{{ charName(v.character).toUpperCase() }} (V.O.)</div>
-          <div class="sp-dialogue">{{ v.line }}</div>
+          <div class="sp-character" :style="{ color: getCharColor(v.character) }">{{ charName(v.character).toUpperCase() }} (V.O.)</div>
+          <div class="sp-dialogue" :style="{ color: getCharColor(v.character) }">{{ v.line }}</div>
         </div>
       </template>
     </div>

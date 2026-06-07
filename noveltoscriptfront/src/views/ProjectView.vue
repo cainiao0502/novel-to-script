@@ -11,6 +11,7 @@ import ScriptRender from '@/components/ScriptRender.vue'
 import ScreenplayPreview from '@/components/ScreenplayPreview.vue'
 import EmotionCurve from '@/components/EmotionCurve.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
+import ScriptStats from '@/components/ScriptStats.vue'
 
 const route = useRoute()
 const projectId = Number(route.params.id)
@@ -563,6 +564,10 @@ function autoSelectChapter(chs) {
         />
 
         <div v-if="error" class="error-bar">{{ error }}</div>
+
+        <ScriptStats
+          :yaml="selectedChapter?.generatedYaml || project.scriptYaml"
+        />
 
         <!-- Three column workbench -->
         <div class="workbench" :class="{ 'is-comparing': compareState }">

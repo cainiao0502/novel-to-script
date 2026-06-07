@@ -1,6 +1,6 @@
 # 小说转剧本工具
 
-> 期末作业 · AI 辅助剧本创作
+>  · AI 辅助剧本创作
 > 把中文小说一键转成结构化 YAML 剧本（影视/短剧/网剧）
 
 📺 **在线演示**：[https://b23.tv/mrVRUuo](https://b23.tv/mrVRUuo) · [http://xhslink.com/o/5W6OXAyw4hD](http://xhslink.com/o/5W6OXAyw4hD)

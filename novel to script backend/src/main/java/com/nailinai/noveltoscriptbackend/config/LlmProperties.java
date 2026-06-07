@@ -10,6 +10,8 @@ public class LlmProperties {
     private String model = "gpt-4o-mini";
     private int timeoutSeconds = 120;
     private int maxConcurrent = 3;
+    private int maxTokens = 8192;
+    private int maxTokensCap = 16384;
 
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
@@ -25,4 +27,10 @@ public class LlmProperties {
 
     public int getMaxConcurrent() { return maxConcurrent; }
     public void setMaxConcurrent(int maxConcurrent) { this.maxConcurrent = maxConcurrent; }
+
+    public int getMaxTokens() { return maxTokens; }
+    public void setMaxTokens(int maxTokens) { this.maxTokens = maxTokens; }
+
+    public int getMaxTokensCap() { return maxTokensCap; }
+    public void setMaxTokensCap(int maxTokensCap) { this.maxTokensCap = maxTokensCap; }
 }

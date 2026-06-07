@@ -25,15 +25,16 @@
 
 ```js
 // 为每个角色分配固定颜色（基于角色 ID 的哈希）
+// 清淡柔和色系，低饱和度，适合阅读
 const CHARACTER_COLORS = [
-  '#7C5CFC', // 紫色
-  '#E8A87C', // 橙色
-  '#5CB85C', // 绿色
-  '#4A9BD9', // 蓝色
-  '#E86A6A', // 红色
-  '#9B59B6', // 紫罗兰
-  '#1ABC9C', // 蓝绿
-  '#F39C12', // 金色
+  '#B8A9E8', // 淡紫
+  '#F0C8A0', // 淡杏
+  '#A8D8A8', // 淡绿
+  '#A0C4E8', // 淡蓝
+  '#F0A8A8', // 淡粉红
+  '#C8B0E0', // 淡紫罗兰
+  '#A0D8D0', // 淡青
+  '#E8D0A0', // 淡金
 ]
 function getCharacterColor(characterId) {
   let hash = 0

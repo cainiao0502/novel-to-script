@@ -333,27 +333,71 @@ public class ScriptGenerationService {
                                       List<Character> known) {
         Map<String, String> prompts = promptBuilder.chapterPrompt(title, idx, total, content, known);
 
-        // 第一次尝试
-        String output = safeChat(prompts.get("system"), prompts.get("user"));
+        int baseTokens = computeMaxTokens(content);
+        int attemptTokens = baseTokens;
+        String output = safeChat(prompts.get("system"), prompts.get("user"), attemptTokens);
         ScriptValidator.ValidationResult vr = validator.validateYaml(output);
         if (vr.isOk()) {
             return yamlMapper.fromYaml(output);
         }
-        log.warn("Chapter {} first attempt failed: {}", idx, vr.summary());
-        // 第二次：附错误明细
-        String retryUser = prompts.get("user")
-                + "\n\n# 上次输出不合规，请修正\n# 错误：\n" + vr.summary();
-        String output2 = safeChat(prompts.get("system"), retryUser);
+        log.warn("Chapter {} first attempt failed (tokens={}): {}", idx, attemptTokens, vr.summary());
+
+        // 第二次：附错误明细（仅在非截断时附带错误反馈；截断时换成"请续写"避免再次撞墙）
+        String retryUser;
+        if (ScriptValidator.looksTruncated(output)) {
+            log.warn("Chapter {} first attempt looks truncated; retrying with more tokens ({} -> {})",
+                    idx, attemptTokens, Math.min(attemptTokens * 2, props.getMaxTokensCap()));
+            attemptTokens = Math.min(attemptTokens * 2, props.getMaxTokensCap());
+            retryUser = prompts.get("user")
+                    + "\n\n# 注意：你上一次的输出在 YAML 中途被截断，请**重写**整个章节剧本，"
+                    + "确保所有引号闭合、整个 YAML 文档以 scenes 数组结束，不要中途截断。";
+        } else {
+            retryUser = prompts.get("user")
+                    + "\n\n# 上次输出不合规，请修正\n# 错误：\n" + vr.summary();
+        }
+        String output2 = safeChat(prompts.get("system"), retryUser, attemptTokens);
         ScriptValidator.ValidationResult vr2 = validator.validateYaml(output2);
         if (vr2.isOk()) {
             return yamlMapper.fromYaml(output2);
         }
+        log.warn("Chapter {} second attempt failed (tokens={}): {}", idx, attemptTokens, vr2.summary());
+
+        // 第三次：若仍疑似截断，再次翻倍 max_tokens 并明确"只续写"
+        if (ScriptValidator.looksTruncated(output2)) {
+            int bumped = Math.min(attemptTokens * 2, props.getMaxTokensCap());
+            if (bumped > attemptTokens) {
+                log.warn("Chapter {} second attempt still truncated; retrying with bumped tokens ({})", idx, bumped);
+                String continueUser = prompts.get("user")
+                        + "\n\n# 你上一次的输出再次被截断。**完整**重写该章节剧本，确保："
+                        + "(1) 所有 \" 引号成对闭合；(2) scenes 数组是文档最后一项并以 ] 收尾；"
+                        + "(3) 文档末尾不要追加任何散文说明。";
+                String output3 = safeChat(prompts.get("system"), continueUser, bumped);
+                ScriptValidator.ValidationResult vr3 = validator.validateYaml(output3);
+                if (vr3.isOk()) {
+                    return yamlMapper.fromYaml(output3);
+                }
+            }
+        }
+
         throw new ScriptException("Chapter " + idx + " validation failed after retry: " + vr2.summary());
     }
 
-    private String safeChat(String system, String user) {
+    /**
+     * 根据章节正文长度估算 max_tokens。
+     * 经验值：剧本 YAML 输出 ≈ 输入正文的 2-3 倍 token；中文 1 字符 ≈ 1.5-2 token。
+     * 起步基线 = props.maxTokens（默认 8192），按正文长度向上溢出，封顶 = props.maxTokensCap。
+     */
+    private int computeMaxTokens(String content) {
+        int inputTokens = Math.max(1, content.length() / 2); // 中文 1 字符 ≈ 2 token
+        int scaled = (int) Math.ceil(inputTokens * 2.5);
+        int base = props.getMaxTokens();
+        int cap = props.getMaxTokensCap();
+        return Math.min(cap, Math.max(base, scaled));
+    }
+
+    private String safeChat(String system, String user, int maxTokens) {
         try {
-            return llmClient.chat(system, user);
+            return llmClient.chat(system, user, maxTokens);
         } catch (LlmException e) {
             throw e;
         } catch (Exception e) {

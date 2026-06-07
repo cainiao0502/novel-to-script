@@ -53,6 +53,47 @@ class ScriptValidatorTest {
         assertTrue(result.getErrors().stream().anyMatch(e -> e.contains("duplicate character id")));
     }
 
+    // ─── looksTruncated 截断探测 ──────────────────────────────────────────────
+
+    @Test
+    void looksTruncated_detectsUnclosedQuotedString() {
+        // 模拟 Chapter 1 案例：generated_at 在中间被截断，引号未闭合
+        String yaml = "version: \"1.0\"\nmeta:\n  generated_at: \"2024-01-01T00:00:0";
+        assertTrue(ScriptValidator.looksTruncated(yaml));
+    }
+
+    @Test
+    void looksTruncated_detectsUnclosedChineseQuotedDialogue() {
+        // 模拟 Chapter 8 案例：对话行引号未闭合
+        String yaml = "version: \"1.0\"\nscenes:\n  - scene_id: \"s_001\"\n    dialogues:\n      - character: \"苏念\"\n        line: \"苏念站在教室窗前，";
+        assertTrue(ScriptValidator.looksTruncated(yaml));
+    }
+
+    @Test
+    void looksTruncated_passesForCompleteYaml() {
+        assertFalse(ScriptValidator.looksTruncated(validYaml()));
+    }
+
+    @Test
+    void looksTruncated_passesForNullAndEmpty() {
+        assertTrue(ScriptValidator.looksTruncated(null));
+        assertTrue(ScriptValidator.looksTruncated(""));
+        assertTrue(ScriptValidator.looksTruncated("   \n  "));
+    }
+
+    @Test
+    void looksTruncated_detectsUnclosedSingleQuote() {
+        String yaml = "version: '1.0";
+        assertTrue(ScriptValidator.looksTruncated(yaml));
+    }
+
+    @Test
+    void looksTruncated_ignoresEscapedQuotes() {
+        // YAML 字符串里的 \" 不会影响引号配平
+        String yaml = "version: \"1.0\"\nmeta:\n  note: \"他说 \\\"你好\\\"\"";
+        assertFalse(ScriptValidator.looksTruncated(yaml));
+    }
+
     private String validYaml() {
         return """
                 version: "1.0"

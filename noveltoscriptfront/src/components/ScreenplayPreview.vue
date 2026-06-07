@@ -3,6 +3,7 @@ import { computed, nextTick, ref } from 'vue'
 import { parse as parseYaml } from 'yaml'
 import { yamlToFountain } from '@/utils/fountainGenerator'
 import gsap from 'gsap'
+import html2pdf from 'html2pdf.js'
 
 const props = defineProps({
   yaml: { type: String, default: '' }
@@ -68,9 +69,19 @@ function downloadFountain() {
   URL.revokeObjectURL(url)
 }
 
-function printPdf() {
+function exportPdf() {
   animateExport()
-  window.print()
+  const el = document.querySelector('.screenplay-content')
+  if (!el) return
+  const opt = {
+    margin:       0.5,
+    filename:     `${title.value}.pdf`,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2, letterRendering: true, useCORS: true },
+    jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' },
+    pagebreak:    { before: '.sp-page-break' }
+  }
+  html2pdf().set(opt).from(el).save()
 }
 
 function animateExport() {
@@ -126,8 +137,8 @@ function showToast(msg) {
         <button class="preview-btn" @click="downloadFountain" :disabled="!fountainText">
           导出 Fountain
         </button>
-        <button class="preview-btn preview-btn-primary" @click="printPdf" :disabled="!fountainText">
-          导出 PDF · 打印
+        <button class="preview-btn preview-btn-primary" @click="exportPdf" :disabled="!fountainText">
+          导出 PDF
         </button>
         <button class="preview-btn" @click="copyFountain" :disabled="!fountainText" title="复制剧本">
           复制
@@ -143,7 +154,7 @@ function showToast(msg) {
         <div v-if="si > 0" class="sp-scene-divider"></div>
 
         <!-- Scene heading -->
-        <div class="sp-scene-heading">
+        <div class="sp-scene-heading" :class="{ 'sp-page-break': si > 0 }">
           <span class="sp-scene-num">{{ si + 1 }}</span>
           {{ intExtLabel(scene.int_ext) }}. {{ scene.location || '未标注地点' }}
           <template v-if="scene.time_of_day"> — {{ timeLabel(scene.time_of_day) }}</template>
@@ -161,13 +172,13 @@ function showToast(msg) {
         <div v-for="(d, di) in scene.dialogues" :key="'d'+di" class="sp-dialogue-group">
           <div class="sp-character" :style="{ color: getCharColor(d.character) }">{{ charName(d.character).toUpperCase() }}</div>
           <div v-if="d.parenthetical" class="sp-parenthetical">（{{ cleanParen(d.parenthetical) }}）</div>
-          <div class="sp-dialogue" :style="{ color: getCharColor(d.character) }">{{ d.line }}</div>
+          <div class="sp-dialogue">{{ d.line }}</div>
         </div>
 
         <!-- Voiceover -->
         <div v-for="(v, vi) in scene.voiceover" :key="'v'+vi" class="sp-dialogue-group">
           <div class="sp-character" :style="{ color: getCharColor(v.character) }">{{ charName(v.character).toUpperCase() }} (V.O.)</div>
-          <div class="sp-dialogue" :style="{ color: getCharColor(v.character) }">{{ v.line }}</div>
+          <div class="sp-dialogue">{{ v.line }}</div>
         </div>
       </template>
     </div>
@@ -257,6 +268,7 @@ function showToast(msg) {
   margin: 1.2em 0 0.5em 0;
   font-weight: 600;
   letter-spacing: 0.01em;
+  page-break-after: avoid;
 }
 .sp-scene-num {
   display: inline-block;
@@ -273,6 +285,7 @@ function showToast(msg) {
 
 .sp-action-block {
   margin-bottom: 0.6em;
+  page-break-inside: avoid;
 }
 
 .sp-action {
@@ -287,6 +300,7 @@ function showToast(msg) {
 .sp-dialogue-group {
   margin: 0.4em 0 0.7em 0;
   padding-left: 8%;
+  page-break-inside: avoid;
 }
 
 .sp-character {
@@ -341,29 +355,59 @@ function showToast(msg) {
     max-width: 100%;
     overflow: visible;
   }
+
+  /* 场景标题：必须完整保留，标题后避免立即分页 */
   .screenplay-content .sp-scene-heading {
     margin-top: 2em;
     margin-bottom: 1em;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    break-after: avoid;
+    page-break-after: avoid;
   }
+
+  /* 对白组：人物名 + 括号 + 台词作为一个整体不允许在页内被拆开 */
   .screenplay-content .sp-dialogue-group {
     padding-left: 0;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
+
+  /* 人物名紧跟下一行，不要让括号/台词跑到上一页 */
   .screenplay-content .sp-character {
     margin-left: 2.2in;
+    break-after: avoid;
+    page-break-after: avoid;
   }
+
+  /* 括号紧跟台词 */
   .screenplay-content .sp-parenthetical {
     margin-left: 1.6in;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    break-after: avoid;
+    page-break-after: avoid;
   }
+
+  /* 长台词允许跨页，但要求至少 2 行与上下文粘连，避免单行孤立 */
   .screenplay-content .sp-dialogue {
     margin-left: 1.0in;
     margin-right: 1.0in;
+    orphans: 2;
+    widows: 2;
   }
+
+  /* 叙述段同样处理 */
   .screenplay-content .sp-action {
     max-width: 6in;
+    orphans: 2;
+    widows: 2;
   }
+
   .screenplay-content .sp-scene-divider {
     background: #ccc;
   }
+
   @page {
     margin: 0.5in 0.5in 0.5in 1in;
     size: letter;

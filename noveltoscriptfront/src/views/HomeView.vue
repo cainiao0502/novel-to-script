@@ -225,7 +225,7 @@ function statusLabel(s) {
               <span>小说正文</span>
               <span class="wz-counter">{{ charCount.toLocaleString() }} 字</span>
             </div>
-            <textarea v-model="form.text" class="wz-textarea" placeholder="粘贴小说正文。至少 3 章才能生成剧本。" rows="10" />
+            <textarea v-model="form.text" class="wz-textarea" placeholder="粘贴小说正文。提交后自动识别章节并预览。" rows="10" />
           </div>
 
           <div v-else-if="mode === 'upload'" class="wz-upload">
@@ -275,7 +275,7 @@ function statusLabel(s) {
           <div v-if="error" class="wz-error">{{ error }}</div>
 
           <div class="wz-foot">
-            <span class="wz-hint">{{ mode === 'yaml' ? '导入后直接进入剧本编辑视图。' : '提交后预览章节；至少 3 章才能继续。' }}</span>
+            <span class="wz-hint">{{ mode === 'yaml' ? '导入后直接进入剧本编辑视图。' : '提交后预览章节，确认无误即可生成剧本。' }}</span>
             <button class="wz-submit" :disabled="!canSubmit || submitting" @click="submit">
               <span v-if="submitting" class="spinner" />
               <span>{{ submitting ? '导入中' : mode === 'yaml' ? '导入剧本' : '解析章节' }}</span>

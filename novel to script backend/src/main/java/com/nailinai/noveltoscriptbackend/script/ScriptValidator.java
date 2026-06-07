@@ -191,4 +191,58 @@ public class ScriptValidator {
             return sb.toString();
         }
     }
+
+    /**
+     * 判断一段 YAML 文本是否疑似被 max_tokens 截断。
+     * 判定规则（任一命中即视为截断）：
+     *   1. 末尾双引号数量为奇数（未闭合的标量）
+     *   2. 最后一行未以合法的 YAML 结束符结尾（值/键/列表项缺尾巴）
+     */
+    public static boolean looksTruncated(String yaml) {
+        if (yaml == null || yaml.isBlank()) return true;
+        String stripped = stripCommentLines(yaml);
+        if (looksUnclosedQuotedString(stripped)) return true;
+        return !endsCleanly(stripped);
+    }
+
+    private static String stripCommentLines(String yaml) {
+        StringBuilder sb = new StringBuilder();
+        for (String line : yaml.split("\n", -1)) {
+            String t = line.trim();
+            if (t.startsWith("#")) continue;
+            sb.append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static boolean looksUnclosedQuotedString(String yaml) {
+        boolean inSingle = false;
+        boolean inDouble = false;
+        boolean escape = false;
+        for (int i = 0; i < yaml.length(); i++) {
+            char c = yaml.charAt(i);
+            if (escape) { escape = false; continue; }
+            if (c == '\\' && inDouble) { escape = true; continue; }
+            if (!inSingle && c == '"') { inDouble = !inDouble; }
+            else if (!inDouble && c == '\'') { inSingle = !inSingle; }
+        }
+        return inDouble || inSingle;
+    }
+
+    private static boolean endsCleanly(String yaml) {
+        String trimmed = yaml.stripTrailing();
+        if (trimmed.isEmpty()) return true;
+        char last = trimmed.charAt(trimmed.length() - 1);
+        // 合法收尾：换行已被 strip；这里判断的是最后一个可见字符
+        return last == '"' || last == '\'' || last == ']' || last == '}'
+                || last == ':' || last == '-' || java.lang.Character.isLetterOrDigit(last)
+                || isCjk(last);
+    }
+
+    private static boolean isCjk(char c) {
+        java.lang.Character.UnicodeBlock b = java.lang.Character.UnicodeBlock.of(c);
+        return b == java.lang.Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                || b == java.lang.Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION
+                || b == java.lang.Character.UnicodeBlock.HALFWIDTH_AND_FULLWIDTH_FORMS;
+    }
 }

@@ -4,7 +4,6 @@ import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
 import { yaml } from '@codemirror/lang-yaml'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { sceneGutterExtensions } from '@/utils/sceneGutter'
 
 const props = defineProps({
   yaml: { type: String, default: '' },
@@ -34,8 +33,6 @@ function build(content) {
       EditorView.updateListener.of((u) => {
         if (u.docChanged) emit('change', u.state.doc.toString())
       }),
-      // Scene navigation gutter
-      ...sceneGutterExtensions(content || ''),
     ]
   })
   view = new EditorView({ state, parent: host.value })

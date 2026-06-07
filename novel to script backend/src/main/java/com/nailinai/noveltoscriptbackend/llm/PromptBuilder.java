@@ -90,8 +90,12 @@ public class PromptBuilder {
             "10. role 只能取 protagonist/antagonist/supporting/npc\n" +
             "11. scene_id 格式如 s_001, s_002 ... 全剧递增\n" +
             "12. 每章至少 1 场戏；多场景章节拆 2-5 场\n" +
-            "13. 输出必须是完整的 YAML，确保所有引号闭合，不要中途截断\n" +
-            "14. 输出末尾不要追加任何说明文字\n";
+            "13. 输出必须是**完整**的 YAML，确保所有引号闭合、scenes 数组以 ] 收尾，**绝不要中途截断**\n" +
+            "14. 输出末尾不要追加任何说明文字、不要 ``` 围栏、不要 markdown 装饰\n" +
+            "15. 所有 string 字段值必须用英文双引号 \"…\" 包裹；字段值内若含特殊字符（: , # $ @ \\ ` { } [ ] 等）必须用引号包好\n" +
+            "16. 严禁在任何字段（尤其 line / actions / summary）中直接以 $ 开头或单独出现 $ 字符（金钱/变量用「金」/「奖励点」等中文替代，或整段用引号包裹）\n" +
+            "17. meta.generated_at 用 ISO8601 字符串，例如 \"2024-01-01T00:00:00Z\"，**必须完整闭合**\n" +
+            "18. 若章节正文中出现超过 4 场戏的素材，仍只输出 2-5 场代表性场景（避免 YAML 过长被截断）\n";
 
     /** 单章生成 prompt。 */
     public Map<String, String> chapterPrompt(String chapterTitle,

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch, nextTick } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
 import { parse as parseYaml } from 'yaml'
 import gsap from 'gsap'
 import DialogueToolbar from '@/components/DialogueToolbar.vue'
@@ -12,6 +12,7 @@ const props = defineProps({
 const emit = defineEmits(['rewrite-dialogue'])
 
 const renderRef = ref(null)
+const scrollRef = ref(null)
 const parseError = ref('')
 const highlightedChar = ref(null)
 
@@ -23,6 +24,42 @@ const rewriteLoading = ref(false)
 const editingDialogue = ref(null) // { sceneId, dialogueIndex }
 const editText = ref('')
 const editTextareaRef = ref(null)
+
+// ── Scene navigation ──
+const activeScene = ref(0)
+let sceneObserver = null
+
+const navScenes = computed(() => {
+  if (!script.value?.scenes) return []
+  return script.value.scenes.map((s, i) => ({
+    index: i,
+    label: `第${i + 1}场`,
+    location: s.location || '未标注地点'
+  }))
+})
+
+function scrollToScene(index) {
+  const el = renderRef.value?.querySelector(`[data-scene-idx="${index}"]`)
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function setupSceneObserver() {
+  sceneObserver?.disconnect()
+  const cards = renderRef.value?.querySelectorAll('[data-scene-idx]')
+  if (!cards?.length) return
+  sceneObserver = new IntersectionObserver((entries) => {
+    let maxRatio = 0
+    let maxIdx = activeScene.value
+    for (const entry of entries) {
+      if (entry.intersectionRatio > maxRatio) {
+        maxRatio = entry.intersectionRatio
+        maxIdx = Number(entry.target.dataset.sceneIdx)
+      }
+    }
+    if (maxRatio > 0) activeScene.value = maxIdx
+  }, { root: scrollRef.value, threshold: [0, 0.25, 0.5, 0.75, 1] })
+  cards.forEach(el => sceneObserver.observe(el))
+}
 
 function toggleHighlight(charId) {
   highlightedChar.value = highlightedChar.value === charId ? null : charId
@@ -306,6 +343,16 @@ const timeLabel = (t) => ({
 
 const intExtLabel = (v) => v === 'INT' ? '内景' : v === 'EXT' ? '外景' : v
 
+const CHAR_COLORS = [
+  '#B8A9E8', '#F0C8A0', '#A8D8A8', '#A0C4E8',
+  '#F0A8A8', '#C8B0E0', '#A0D8D0', '#E8D0A0',
+]
+function getCharColor(id) {
+  let h = 0
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) & 0xffff
+  return CHAR_COLORS[Math.abs(h) % CHAR_COLORS.length]
+}
+
 function charName(id) {
   const c = charMap.value[id]
   return c ? c.name : id
@@ -318,7 +365,11 @@ function yamlValue(val) {
 }
 
 onMounted(() => {
-  nextTick(() => animateIn())
+  nextTick(() => { animateIn(); setupSceneObserver() })
+})
+
+onBeforeUnmount(() => {
+  sceneObserver?.disconnect()
 })
 
 // Re-animate when yaml changes (new chapter completes)
@@ -326,11 +377,11 @@ watch(() => props.yaml, (val, old) => {
   if (!old && val) {
     // Content just arrived: reset counter so all cards animate in fresh
     prevSceneCount.value = 0
-    nextTick(() => animateIn())
+    nextTick(() => { animateIn(); setupSceneObserver() })
     return
   }
   prevSceneCount.value = 0
-  nextTick(() => animateIn())
+  nextTick(() => { animateIn(); setupSceneObserver() })
 })
 
 const prevSceneCount = ref(0)
@@ -352,6 +403,7 @@ function animateIn() {
 
 <template>
   <div class="script-render" ref="renderRef">
+    <div class="sr-scroll" ref="scrollRef">
     <!-- Parse error -->
     <div v-if="parseError" class="parse-error">
       <p class="eyebrow error-text">YAML 解析失败</p>
@@ -425,6 +477,7 @@ function animateIn() {
           v-for="(scene, si) in script.scenes"
           :key="scene.scene_id || si"
           class="scene-card"
+          :data-scene-idx="si"
         >
           <!-- Scene header -->
           <div class="scene-header">
@@ -465,7 +518,7 @@ function animateIn() {
                 v-if="isEditing(scene.scene_id || `s_${si}`, di)"
                 class="dialogue-edit-area"
               >
-                <div class="dialogue-character">
+                <div class="dialogue-character" :style="{ color: getCharColor(d.character) }">
                   {{ charName(d.character) }}
                   <span v-if="d.parenthetical" class="dialogue-parenthetical">（{{ d.parenthetical }}）</span>
                 </div>
@@ -495,7 +548,7 @@ function animateIn() {
                   @mousedown.prevent
                   @click="selectDialogue($event, si, di)"
                 >
-                  <div class="dialogue-character">
+                  <div class="dialogue-character" :style="{ color: getCharColor(d.character) }">
                     {{ charName(d.character) }}
                     <span v-if="d.parenthetical" class="dialogue-parenthetical">（{{ d.parenthetical }}）</span>
                     <span v-if="d.emotion" class="dialogue-emotion"> · {{ d.emotion }}</span>
@@ -529,7 +582,7 @@ function animateIn() {
               class="voiceover-block"
               :class="{ 'is-highlighted': highlightedChar === v.character, 'is-dimmed': highlightedChar && highlightedChar !== v.character }"
             >
-              <span class="voiceover-label">【{{ charName(v.character) }}·旁白】</span>
+              <span class="voiceover-label" :style="{ color: getCharColor(v.character) }">【{{ charName(v.character) }}·旁白】</span>
               <p class="voiceover-line">{{ v.line }}</p>
             </div>
           </div>
@@ -581,18 +634,40 @@ function animateIn() {
       @close="closeToolbar"
       @manual-edit="handleManualEdit"
     />
+
+    </div><!-- /sr-scroll -->
+
+    <!-- Scene navigation: thin strip on right, expands on hover -->
+    <div v-if="navScenes.length > 3" class="scene-nav">
+      <div class="scene-nav-inner">
+        <button
+          v-for="s in navScenes"
+          :key="s.index"
+          class="scene-nav-item"
+          :class="{ active: activeScene === s.index }"
+          @click="scrollToScene(s.index)"
+          :title="s.location"
+        >
+          <span class="scene-nav-dot" :class="{ active: activeScene === s.index }" />
+          <span class="scene-nav-text">{{ s.label }}</span>
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .script-render {
   position: relative;
-  padding: var(--space-lg);
-  max-height: calc(100vh - 200px);
-  overflow-y: auto;
   font-family: var(--font-text);
   line-height: 1.8;
   color: var(--color-ink);
+  min-height: 300px;
+}
+.sr-scroll {
+  padding: var(--space-lg);
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
 }
 
 /* ── Empty / Error ── */
@@ -1049,5 +1124,77 @@ function animateIn() {
 .edit-cancel:hover {
   background: var(--color-surface-3);
   color: var(--color-ink);
+}
+
+/* ── Scene navigation: thin strip, expands on hover ── */
+.scene-nav {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  z-index: 10;
+  padding: 40px 0;
+  cursor: pointer;
+  transition: width 0.2s ease;
+}
+.scene-nav:hover {
+  width: 80px;
+}
+.scene-nav-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 8px 0;
+  overflow: hidden;
+  border-left: 1px solid var(--color-hairline);
+  background: transparent;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.scene-nav:hover .scene-nav-inner {
+  background: var(--color-surface-1);
+  border-left-color: var(--color-hairline-strong);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  align-items: flex-start;
+  padding-left: 6px;
+  overflow-y: auto;
+}
+.scene-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--color-ink-subtle);
+  transition: all 0.15s ease;
+  border: 0;
+  background: transparent;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.scene-nav-item:hover { background: var(--color-surface-3); color: var(--color-ink); }
+.scene-nav-item.active { color: var(--color-primary); font-weight: 600; }
+.scene-nav-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--color-hairline-strong);
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+.scene-nav-dot.active { background: var(--color-primary); }
+.scene-nav-text {
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 0;
+  opacity: 0;
+  transition: max-width 0.15s ease, opacity 0.15s ease;
+}
+.scene-nav:hover .scene-nav-text {
+  max-width: 60px;
+  opacity: 1;
 }
 </style>

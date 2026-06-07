@@ -30,7 +30,7 @@ public class OpenAiCompatibleClient implements LlmClient {
 
     @Override
     public String chat(String systemPrompt, String userPrompt) {
-        return chat(systemPrompt, userPrompt, 4096);
+        return chat(systemPrompt, userPrompt, props.getMaxTokens());
     }
 
     @Override
@@ -94,33 +94,51 @@ public class OpenAiCompatibleClient implements LlmClient {
     }
 
     /**
-     * 剥离 LLM 输出首尾可能包裹的 Markdown 代码围栏（```yaml … ``` / ```json … ``` / ``` … ```）。
+     * 剥离 LLM 输出中可能出现的 Markdown 代码围栏（```yaml … ``` / ```json … ``` / ``` … ```）。
      * 部分模型即使 prompt 明确要求"不要包裹 ```"，仍会输出带围栏的内容，
      * 直接进入 YAML/JSON 解析会因首字符为反引号而失败。
-     * 该方法仅在首尾处理，不影响正文中的反引号。
+     * 该方法按以下顺序处理（多策略兜底）：
+     *   1. 整体被围栏包裹 → 抽取首对围栏之间的内容
+     *   2. 任意一行以 ``` 开头（游离围栏）→ 整行删除；删除前先把首个 ``` 之后
+     *      的一切截断（涵盖「``` + 多行散文」的情况）
+     *   3. 末尾还残留 ```（同行带说明）→ 切到最末一个 ``` 之前
+     *   4. 无任何围栏 → 原样返回
      */
     static String stripCodeFences(String raw) {
         if (raw == null) return "";
         String s = raw.strip();
-        if (s.length() >= 3 && s.charAt(0) == '`' && s.charAt(1) == '`' && s.charAt(2) == '`') {
-            int firstNewline = s.indexOf('\n');
-            if (firstNewline >= 0) {
-                s = s.substring(firstNewline + 1);
-            } else {
-                s = s.substring(3);
+        if (s.isEmpty()) return s;
+
+        // 1) 整体被围栏包裹：抽取首对围栏之间的内容
+        if (s.startsWith("```")) {
+            int openFenceEnd = s.indexOf('\n');
+            if (openFenceEnd > 0) {
+                int closeFence = s.indexOf("```", openFenceEnd);
+                if (closeFence > openFenceEnd) {
+                    return s.substring(openFenceEnd + 1, closeFence).strip();
+                }
+                // 没有匹配的右围栏 → 退化为「从首围栏下一行到末尾」
+                return s.substring(openFenceEnd + 1).strip();
             }
-            s = s.stripLeading();
         }
-        if (s.length() >= 3 && s.charAt(s.length() - 1) == '`'
-                && s.charAt(s.length() - 2) == '`' && s.charAt(s.length() - 3) == '`') {
-            // 找最后一个 ``` 起始位置
-            int lastFence = s.lastIndexOf("```");
-            if (lastFence >= 0) {
-                s = s.substring(0, lastFence);
-            }
-            s = s.stripTrailing();
+
+        // 2a) 找到第一个游离的 ```，把从那里开始的所有内容截断（含同行/后续散文）
+        int firstStray = s.indexOf("```");
+        if (firstStray >= 0) {
+            s = s.substring(0, firstStray).stripTrailing();
         }
-        return s;
+
+        // 2b) 兜底：再清一遍（理论上 2a 已把所有 ``` 处理完），防御 NUL/拼接异常
+        String[] lines = s.split("\n");
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (String line : lines) {
+            if (line.stripLeading().startsWith("```")) continue;
+            if (!first) sb.append('\n');
+            sb.append(line);
+            first = false;
+        }
+        return sb.toString().strip();
     }
 
     @Override
